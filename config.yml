@@ -1,0 +1,5 @@
+# Configure the backend API host and port
+api_host: http://localhost
+api_port: 3000
+# Port the frontend will listen on
+frontend_port: 4000
