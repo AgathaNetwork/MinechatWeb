@@ -1,0 +1,674 @@
+// Vue 3 + Element Plus chat page
+const { createApp, ref, reactive, computed, onMounted, nextTick } = Vue;
+
+createApp({
+  setup() {
+    const apiBase = ref('');
+    const apiAuthBase = ref('');
+    const token = ref(localStorage.getItem('token') || null);
+    const sessionOk = ref(false);
+
+    const chats = ref([]);
+    const currentChatId = ref(null);
+    const currentChatTitle = ref('');
+
+    const messages = ref([]);
+    const msgById = reactive({});
+    const userNameCache = reactive({});
+
+    const loadingMore = ref(false);
+    const noMoreBefore = ref(false);
+    const PAGE_LIMIT = 20;
+
+    const replyTarget = ref(null);
+
+    const ctxMenuVisible = ref(false);
+    const ctxMenuX = ref(0);
+    const ctxMenuY = ref(0);
+    const ctxMenuMsg = ref(null);
+
+    const emojiPanelVisible = ref(false);
+    const emojiPacks = ref([]);
+
+    const msgInput = ref('');
+
+    const selfUserId = ref(null);
+
+    const messagesEl = ref(null);
+
+    const isGlobalChat = computed(() => currentChatId.value === 'global');
+    const isLoggedIn = computed(() => !!token.value || !!sessionOk.value);
+
+    function authHeaders(extra) {
+      const h = Object.assign({}, extra || {});
+      if (token.value) h['Authorization'] = `Bearer ${token.value}`;
+      return h;
+    }
+
+    function decodeJwtPayload(jwt) {
+      try {
+        const parts = String(jwt || '').split('.');
+        if (parts.length !== 3) return null;
+        const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const padded = payload + '='.repeat((4 - (payload.length % 4)) % 4);
+        const json = atob(padded);
+        return JSON.parse(json);
+      } catch (e) {
+        return null;
+      }
+    }
+
+    async function resolveSelfUserId() {
+      // 1) Prefer extracting from JWT token (no network)
+      if (token.value) {
+        const payload = decodeJwtPayload(token.value);
+        if (payload && typeof payload === 'object') {
+          const candidate = payload.userId || payload.uid || payload.id || payload.sub;
+          if (candidate) {
+            selfUserId.value = String(candidate);
+            return selfUserId.value;
+          }
+        }
+      }
+
+      // 2) Try common "me" endpoints (best-effort)
+      const endpoints = ['/users/me', '/me', '/auth/me', '/api/users/me', '/api/me', '/api/auth/me'];
+      for (const ep of endpoints) {
+        try {
+          const url = ep.startsWith('/api/') ? ep : `${apiBase.value}${ep}`;
+          const res = await fetch(url, {
+            credentials: 'include',
+            headers: authHeaders(),
+          });
+          if (!res.ok) continue;
+          const data = await res.json().catch(() => null);
+          if (!data || typeof data !== 'object') continue;
+          const candidate = data.userId || data.uid || data.id || (data.user && (data.user.id || data.user.userId));
+          if (candidate) {
+            selfUserId.value = String(candidate);
+            return selfUserId.value;
+          }
+        } catch (e) {
+          // ignore and continue
+        }
+      }
+
+      selfUserId.value = null;
+      return null;
+    }
+
+    function buildMessagesUrl(chatId, opts) {
+      const before = opts && opts.beforeId ? `before=${encodeURIComponent(opts.beforeId)}&` : '';
+      const limit = `limit=${encodeURIComponent(opts && opts.limit ? opts.limit : PAGE_LIMIT)}`;
+      if (chatId === 'global') return `${apiBase.value}/global/messages?${before}${limit}`;
+      return `${apiBase.value}/chats/${encodeURIComponent(chatId)}/messages?${before}${limit}`;
+    }
+
+    async function fetchConfig() {
+      const conf = await fetch('/config').then((r) => r.json());
+      apiAuthBase.value = conf.apiBase;
+      apiBase.value = conf.apiProxyBase || conf.apiBase;
+    }
+
+    async function checkSession() {
+      try {
+        const res = await fetch(`${apiBase.value}/chats`, { credentials: 'include' });
+        sessionOk.value = res.ok;
+        return res.ok;
+      } catch (e) {
+        sessionOk.value = false;
+        return false;
+      }
+    }
+
+    function openLoginPopup() {
+      const base = apiAuthBase.value || apiBase.value;
+      const popup = window.open(`${base}/auth/microsoft`, 'oauth', 'width=600,height=700');
+      const timer = setInterval(async () => {
+        try {
+          if (!popup || popup.closed) {
+            clearInterval(timer);
+            await checkSession();
+            if (sessionOk.value) {
+              await loadChats();
+            }
+            return;
+          }
+          const txt = popup.document.body && popup.document.body.innerText;
+          if (!txt) return;
+          let data;
+          try {
+            data = JSON.parse(txt);
+          } catch (e) {
+            return;
+          }
+          if (data && data.token) {
+            token.value = data.token;
+            localStorage.setItem('token', token.value);
+            popup.close();
+            clearInterval(timer);
+            await loadChats();
+          }
+        } catch (e) {
+          // cross-origin until final redirect
+        }
+      }, 500);
+    }
+
+    async function logout() {
+      token.value = null;
+      localStorage.removeItem('token');
+      sessionOk.value = false;
+      try {
+        const base = apiAuthBase.value || apiBase.value;
+        fetch(`${base}/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
+      } catch (e) {}
+      window.location.href = '/';
+    }
+
+    async function fetchMissingUserNames(ids) {
+      const missing = Array.from(ids).filter((id) => id && !userNameCache[id]);
+      if (missing.length === 0) return;
+      await Promise.allSettled(
+        missing.map(async (id) => {
+          try {
+            const res = await fetch(`${apiBase.value}/users/${encodeURIComponent(id)}`, {
+              credentials: 'include',
+              headers: authHeaders(),
+            });
+            if (!res.ok) throw new Error('no user');
+            const u = await res.json();
+            userNameCache[id] = u.username || u.displayName || id;
+          } catch (e) {
+            userNameCache[id] = id;
+          }
+        })
+      );
+    }
+
+    function messageAuthorName(m) {
+      const id = m && m.from_user;
+      if (!id) return '';
+      if (isOwnMessage(m)) return '我';
+      return userNameCache[id] || id;
+    }
+
+    function isOwnMessage(m) {
+      if (!m) return false;
+      if (m.__own === true) return true;
+      if (!m.from_user || !selfUserId.value) return false;
+      return String(m.from_user) === String(selfUserId.value);
+    }
+
+    function bubbleBackground(m) {
+      if (!m) return '#fff';
+      if (m.__status === 'sending') return '#eef6ff';
+      if (m.__status === 'failed') return '#ffecec';
+      return '#fff';
+    }
+
+    function messageTextPreview(m) {
+      if (!m) return '';
+      if (m.type === 'emoji' && m.content) {
+        return '[表情] ' + (m.content.filename || '');
+      }
+      if (typeof m.content === 'object') {
+        return m.content.text || JSON.stringify(m.content);
+      }
+      return m.content || '';
+    }
+
+    function parseMessageTime(m) {
+      if (!m) return null;
+      const candidates = [
+        m.createdAt,
+        m.created_at,
+        m.sentAt,
+        m.sent_at,
+        m.timestamp,
+        m.time,
+        m.ts,
+      ];
+      const v = candidates.find((x) => x !== undefined && x !== null && x !== '');
+      if (v === undefined) return null;
+      // number-like
+      if (typeof v === 'number') {
+        const ms = v < 1e12 ? v * 1000 : v;
+        const d = new Date(ms);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      const s = String(v);
+      if (/^\d+$/.test(s)) {
+        const num = Number(s);
+        const ms = num < 1e12 ? num * 1000 : num;
+        const d = new Date(ms);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    function formatTime(m) {
+      const d = parseMessageTime(m);
+      if (!d) return '';
+      const yyyy = String(d.getFullYear());
+      const MM = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      const ss = String(d.getSeconds()).padStart(2, '0');
+      return `${yyyy}年${MM}月${dd}日 ${hh}:${mm}:${ss}`;
+    }
+
+    function repliedRefMessage(m) {
+      if (!m || !m.replied_to) return null;
+      if (typeof m.replied_to === 'object') return m.replied_to;
+      return msgById[m.replied_to] || null;
+    }
+
+    function scrollToMessage(messageId) {
+      try {
+        const el = document.querySelector(`.msg-wrapper[data-id="${messageId}"]`);
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const prev = el.style.background;
+        el.style.background = '#ffffcc';
+        setTimeout(() => {
+          el.style.background = prev;
+        }, 800);
+      } catch (e) {}
+    }
+
+    function setReplyTarget(m) {
+      if (isGlobalChat.value) return;
+      replyTarget.value = m;
+    }
+
+    function showCtxMenu(ev, msg) {
+      if (isGlobalChat.value) return;
+      ctxMenuMsg.value = msg;
+      ctxMenuX.value = ev.clientX;
+      ctxMenuY.value = ev.clientY;
+      ctxMenuVisible.value = true;
+    }
+
+    function hideCtxMenu() {
+      ctxMenuVisible.value = false;
+      ctxMenuMsg.value = null;
+    }
+
+    function onMessageContextMenu(ev, msg) {
+      try {
+        ev.preventDefault();
+        ev.stopPropagation();
+      } catch (e) {}
+      showCtxMenu(ev, msg);
+    }
+
+    function ctxReply() {
+      if (!ctxMenuMsg.value) return;
+      setReplyTarget(ctxMenuMsg.value);
+      hideCtxMenu();
+    }
+
+    function clearReplyTarget() {
+      replyTarget.value = null;
+    }
+
+    const replyPreview = computed(() => {
+      if (!replyTarget.value) return '';
+      const author = messageAuthorName(replyTarget.value);
+      const txt = messageTextPreview(replyTarget.value);
+      const shortTxt = txt.length > 200 ? txt.slice(0, 200) + '...' : txt;
+      return (author ? author + ': ' : '') + shortTxt;
+    });
+
+    async function loadChats() {
+      try {
+        const res = await fetch(`${apiBase.value}/chats`, {
+          credentials: 'include',
+          headers: authHeaders(),
+        });
+        if (!res.ok) throw new Error('未登录或请求失败');
+        chats.value = await res.json();
+
+        // open initial chat
+        const params = new URLSearchParams(window.location.search);
+        const openId = params.get('open') || (window.location.hash ? window.location.hash.replace(/^#/, '') : null);
+        const toOpen = openId || 'global';
+        await openChat(toOpen);
+      } catch (e) {
+        console.error(e);
+        ElementPlus.ElMessage.error('加载会话失败，请检查登录状态');
+      }
+    }
+
+    async function openChat(id) {
+      currentChatId.value = id;
+      emojiPanelVisible.value = false;
+      if (id === 'global') clearReplyTarget();
+
+      const isGlobal = id === 'global';
+      try {
+        if (isGlobal) {
+          currentChatTitle.value = '全服';
+        } else {
+          currentChatTitle.value = '';
+          try {
+            const metaRes = await fetch(`${apiBase.value}/chats/${encodeURIComponent(id)}`, {
+              credentials: 'include',
+              headers: authHeaders(),
+            });
+            if (metaRes.ok) {
+              const chatMeta = await metaRes.json();
+              currentChatTitle.value = chatMeta.displayName || chatMeta.name || '';
+            }
+          } catch (e) {}
+        }
+
+        const msgUrl = buildMessagesUrl(id, { limit: PAGE_LIMIT });
+        const res = await fetch(msgUrl, {
+          credentials: 'include',
+          headers: authHeaders(),
+        });
+        if (!res.ok) throw new Error('加载消息失败');
+        let msgs = await res.json();
+        // Safety: if backend ignores limit and returns full history, only render latest page.
+        if (Array.isArray(msgs) && msgs.length > PAGE_LIMIT) msgs = msgs.slice(-PAGE_LIMIT);
+
+        // reset maps
+        messages.value = [];
+        for (const k of Object.keys(msgById)) delete msgById[k];
+
+        msgs.forEach((m) => {
+          if (isGlobal && m && m.from && !m.from_user) m.from_user = m.from;
+          if (m && m.id) msgById[m.id] = m;
+        });
+
+        const userIds = new Set();
+        msgs.forEach((m) => {
+          if (m && m.from_user) userIds.add(m.from_user);
+          if (!isGlobal && m && m.replied_to) {
+            const ref = typeof m.replied_to === 'object' ? m.replied_to : msgById[m.replied_to];
+            if (ref && ref.from_user) userIds.add(ref.from_user);
+          }
+        });
+        await fetchMissingUserNames(userIds);
+
+        messages.value = msgs.slice();
+        noMoreBefore.value = !Array.isArray(msgs) || msgs.length < PAGE_LIMIT;
+
+        await nextTick();
+        if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
+      } catch (e) {
+        console.error(e);
+        ElementPlus.ElMessage.error('无法打开会话');
+      }
+    }
+
+    async function loadMoreMessages() {
+      if (!currentChatId.value) return;
+      if (loadingMore.value || noMoreBefore.value) return;
+      if (!messagesEl.value) return;
+      const first = messages.value[0];
+      if (!first || !first.id) return;
+
+      loadingMore.value = true;
+      const beforeId = first.id;
+      const isGlobal = currentChatId.value === 'global';
+
+      try {
+        const url = buildMessagesUrl(currentChatId.value, { beforeId, limit: PAGE_LIMIT });
+
+        const prevScrollHeight = messagesEl.value.scrollHeight;
+        const prevScrollTop = messagesEl.value.scrollTop;
+
+        const res = await fetch(url, { credentials: 'include', headers: authHeaders() });
+        if (!res.ok) throw new Error('加载更多消息失败');
+        const more = await res.json();
+        if (!more || more.length === 0) {
+          noMoreBefore.value = true;
+          return;
+        }
+
+        more.forEach((m) => {
+          if (isGlobal && m && m.from && !m.from_user) m.from_user = m.from;
+          if (m && m.id) msgById[m.id] = m;
+        });
+
+        const moreUserIds = new Set();
+        more.forEach((m) => {
+          if (m && m.from_user) moreUserIds.add(m.from_user);
+          if (!isGlobal && m && m.replied_to) {
+            const ref = typeof m.replied_to === 'object' ? m.replied_to : msgById[m.replied_to];
+            if (ref && ref.from_user) moreUserIds.add(ref.from_user);
+          }
+        });
+        await fetchMissingUserNames(moreUserIds);
+
+        messages.value = more.concat(messages.value);
+
+        await nextTick();
+        const newScrollHeight = messagesEl.value.scrollHeight;
+        messagesEl.value.scrollTop = newScrollHeight - prevScrollHeight + prevScrollTop;
+
+        if (more.length < PAGE_LIMIT) noMoreBefore.value = true;
+      } catch (e) {
+        console.error(e);
+      } finally {
+        loadingMore.value = false;
+      }
+    }
+
+    function onMessagesScroll() {
+      if (!messagesEl.value) return;
+      if (messagesEl.value.scrollTop < 80) {
+        loadMoreMessages();
+      }
+    }
+
+    async function sendText() {
+      if (!currentChatId.value) return ElementPlus.ElMessage.warning('先选择会话');
+      const text = msgInput.value.trim();
+      if (!text) return;
+
+      const tempId = `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const optimisticMsg = {
+        id: tempId,
+        type: 'text',
+        content: { text },
+        from_user: selfUserId.value || '__me__',
+        createdAt: new Date().toISOString(),
+        __own: true,
+        __status: 'sending',
+      };
+      if (!isGlobalChat.value && replyTarget.value) optimisticMsg.replied_to = replyTarget.value;
+      msgById[tempId] = optimisticMsg;
+      messages.value = messages.value.concat([optimisticMsg]);
+      msgInput.value = '';
+      await nextTick();
+      if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
+
+      try {
+        if (isGlobalChat.value) {
+          const res = await fetch(`${apiBase.value}/global/messages`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ content: text }),
+          });
+          if (!res.ok) throw new Error('发送失败');
+          optimisticMsg.__status = 'sent';
+        } else {
+          const payload = { type: 'text', content: text };
+          if (replyTarget.value) payload.repliedTo = replyTarget.value.id || replyTarget.value;
+          const res = await fetch(`${apiBase.value}/chats/${encodeURIComponent(currentChatId.value)}/messages`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) throw new Error('发送失败');
+          optimisticMsg.__status = 'sent';
+          clearReplyTarget();
+        }
+      } catch (e) {
+        console.error(e);
+        optimisticMsg.__status = 'failed';
+        ElementPlus.ElMessage.error('发送消息失败');
+      } finally {
+        await nextTick();
+        if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
+      }
+    }
+
+    async function toggleEmojiPanel() {
+      if (isGlobalChat.value) return;
+      emojiPanelVisible.value = !emojiPanelVisible.value;
+      if (!emojiPanelVisible.value) return;
+
+      try {
+        const res = await fetch(`${apiBase.value}/emoji`, {
+          credentials: 'include',
+          headers: authHeaders(),
+        });
+        if (!res.ok) throw new Error('load emoji failed');
+        emojiPacks.value = await res.json();
+      } catch (e) {
+        console.error(e);
+        emojiPacks.value = [];
+      }
+    }
+
+    async function sendEmoji(pack) {
+      if (!currentChatId.value) return ElementPlus.ElMessage.warning('先选择会话');
+      if (isGlobalChat.value) return ElementPlus.ElMessage.warning('全服聊天不支持表情包');
+
+      const tempId = `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const optimisticMsg = {
+        id: tempId,
+        type: 'emoji',
+        content: {
+          packId: pack.id,
+          url: pack.url,
+          filename: (pack.meta && pack.meta.filename) || pack.filename || '',
+        },
+        from_user: selfUserId.value || '__me__',
+        createdAt: new Date().toISOString(),
+        __own: true,
+        __status: 'sending',
+      };
+      if (replyTarget.value) optimisticMsg.replied_to = replyTarget.value;
+      msgById[tempId] = optimisticMsg;
+      messages.value = messages.value.concat([optimisticMsg]);
+      emojiPanelVisible.value = false;
+      await nextTick();
+      if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
+
+      try {
+        const payload = {
+          type: 'emoji',
+          content: {
+            packId: pack.id,
+            url: pack.url,
+            filename: (pack.meta && pack.meta.filename) || pack.filename || '',
+          },
+        };
+        if (replyTarget.value) payload.repliedTo = replyTarget.value.id || replyTarget.value;
+
+        const res = await fetch(`${apiBase.value}/chats/${encodeURIComponent(currentChatId.value)}/messages`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error('发送失败');
+        optimisticMsg.__status = 'sent';
+      } catch (e) {
+        console.error(e);
+        optimisticMsg.__status = 'failed';
+        ElementPlus.ElMessage.error('发送表情失败');
+      } finally {
+        await nextTick();
+        if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
+      }
+    }
+
+    function onChatClick(c) {
+      openChat(c.id);
+    }
+
+    function openGlobal() {
+      openChat('global');
+    }
+
+    function goEmojiManage() {
+      window.location.href = '/emoji.html';
+    }
+
+    function onNav(key) {
+      if (key === 'chat') window.location.href = '/chat.html';
+      else if (key === 'players') window.location.href = '/players.html';
+    }
+
+    onMounted(async () => {
+      await fetchConfig();
+      await checkSession();
+      await resolveSelfUserId();
+      if (isLoggedIn.value) {
+        await loadChats();
+      }
+
+      // click outside closes emoji panel
+      document.addEventListener('click', () => {
+        emojiPanelVisible.value = false;
+        hideCtxMenu();
+      });
+    });
+
+    return {
+      // state
+      chats,
+      currentChatId,
+      currentChatTitle,
+      messages,
+      msgInput,
+      replyTarget,
+      replyPreview,
+      emojiPanelVisible,
+      emojiPacks,
+      messagesEl,
+      isGlobalChat,
+      isLoggedIn,
+
+      ctxMenuVisible,
+      ctxMenuX,
+      ctxMenuY,
+
+      // helpers
+      messageAuthorName,
+      messageTextPreview,
+      repliedRefMessage,
+      scrollToMessage,
+      isOwnMessage,
+      bubbleBackground,
+      formatTime,
+
+      // actions
+      openLoginPopup,
+      logout,
+      onChatClick,
+      openGlobal,
+      onMessageContextMenu,
+      ctxReply,
+      setReplyTarget,
+      clearReplyTarget,
+      onMessagesScroll,
+      sendText,
+      toggleEmojiPanel,
+      sendEmoji,
+      goEmojiManage,
+      onNav,
+    };
+  },
+}).use(ElementPlus).mount('#app');

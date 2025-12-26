@@ -1,61 +1,71 @@
-let apiBase = '';
-let token = localStorage.getItem('token') || null;
+// Vue 3 players page
+const { createApp, ref, onMounted } = Vue;
 
-function $(id){ return document.getElementById(id); }
+createApp({
+  setup(){
+    const apiBase = ref('');
+    const token = ref(localStorage.getItem('token') || null);
+    const q = ref('');
+    const users = ref([]);
+    const filtered = ref([]);
 
-async function init(){
-  const conf = await fetch('/config').then(r=>r.json());
-  apiBase = conf.apiBase;
-  setupSearch();
-  loadUsers();
-}
+    function authHeaders(extra){
+      const h = Object.assign({}, extra || {});
+      if(token.value) h['Authorization'] = `Bearer ${token.value}`;
+      return h;
+    }
 
-function setupSearch(){
-  const input = $('userSearch');
-  let timer = null;
-  input.addEventListener('input', ()=>{
-    clearTimeout(timer); timer = setTimeout(()=>{ renderUsers(filterUsers(input.value)); }, 150);
-  });
-}
+    async function fetchConfig(){ const conf = await fetch('/config').then(r=>r.json()); apiBase.value = conf.apiProxyBase || conf.apiBase; }
+    async function loadUsers(){
+      try{
+        const res = await fetch(`${apiBase.value}/users`, {
+          credentials: 'include',
+          headers: authHeaders(),
+        });
+        if(res.status === 204){
+          users.value = [];
+          filtered.value = [];
+          return;
+        }
+        if(!res.ok){
+          const txt = await res.text().catch(()=> '');
+          throw new Error(`load users failed: ${res.status} ${txt}`);
+        }
+        users.value = await res.json();
+        filtered.value = users.value.slice();
+      }catch(e){
+        console.error(e);
+        alert('无法加载玩家列表：' + (e && e.message ? e.message : e));
+      }
+    }
 
-let allUsers = [];
-function filterUsers(q){
-  if(!q) return allUsers.slice();
-  const s = q.trim().toLowerCase();
-  return allUsers.filter(u => (u.username||'').toLowerCase().includes(s) || (u.id||'').toLowerCase().includes(s));
-}
+    function onInput(){ const s = q.value.trim().toLowerCase(); if(!s){ filtered.value = users.value.slice(); return; } filtered.value = users.value.filter(u=> (u.username||u.id||'').toLowerCase().includes(s)); }
 
-async function loadUsers(){
-  try{
-    const res = await fetch(`${apiBase}/users`, { headers: { 'Authorization': `Bearer ${token}` } });
-    if(!res.ok) throw new Error('加载玩家失败');
-    allUsers = await res.json();
-    renderUsers(allUsers);
-  }catch(e){ console.error(e); alert('无法加载玩家列表，请检查 API 配置和登录状态'); }
-}
+    async function openChat(userId){
+      try{
+        const res = await fetch(`${apiBase.value}/chats/with/${encodeURIComponent(userId)}`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: authHeaders(),
+        });
+        if(!res.ok){
+          const txt = await res.text().catch(()=> '');
+          throw new Error(`open/create chat failed: ${res.status} ${txt}`);
+        }
+        const data = await res.json(); const chatId = data.chatId || (data.chat && data.chat.id) || null;
+        if(!chatId) throw new Error('no chatId');
+        window.location.href = `/chat.html?open=${encodeURIComponent(chatId)}`;
+      }catch(e){ console.error(e); alert('打开或创建私聊失败'); }
+    }
 
-function renderUsers(list){
-  const ul = $('userList'); ul.innerHTML = '';
-  list.forEach(u => {
-    const li = document.createElement('li');
-    li.className = 'player';
-    li.dataset.id = u.id;
-    li.innerHTML = `<strong>${u.username || u.id}</strong><div class="meta">${u.id}</div>`;
-    li.addEventListener('click', ()=>openOrCreateChat(u.id));
-    ul.appendChild(li);
-  });
-}
+    function onNav(key){
+      if(key === 'chat') window.location.href = '/chat.html';
+      else if(key === 'players') window.location.href = '/players.html';
+    }
 
-async function openOrCreateChat(userId){
-  try{
-    const res = await fetch(`${apiBase}/chats/with/${encodeURIComponent(userId)}`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
-    if(!res.ok){ const txt = await res.text().catch(()=>''); throw new Error('无法打开/创建会话: ' + res.status + ' ' + txt); }
-    const data = await res.json();
-    const chatId = data.chatId || (data.chat && data.chat.id) || null;
-    if(!chatId) throw new Error('无效的 chatId');
-    // redirect to chat page and instruct it to open this chat
-    window.location.href = `/chat.html?open=${encodeURIComponent(chatId)}`;
-  }catch(e){ console.error(e); alert('打开或创建私聊失败'); }
-}
+    function logout(){ token.value=null; localStorage.removeItem('token'); window.location.href = '/'; }
 
-document.addEventListener('DOMContentLoaded', ()=>{ init(); });
+    onMounted(async ()=>{ await fetchConfig(); await loadUsers(); });
+    return { q, filtered, onInput, openChat, logout, onNav };
+  }
+}).use(ElementPlus).mount('#app');

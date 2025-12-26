@@ -1,4 +1,5 @@
 let apiBase = '';
+let apiAuthBase = '';
 let token = localStorage.getItem('token') || null;
 let currentChat = null;
 let replyTarget = null; // message object or id to reply to
@@ -43,7 +44,8 @@ function $(id){ return document.getElementById(id); }
 
 async function init(){
   const conf = await fetch('/config').then(r=>r.json());
-  apiBase = conf.apiBase;
+  apiAuthBase = conf.apiBase;
+  apiBase = conf.apiProxyBase || conf.apiBase;
   setupAuth();
   // try to load chats using cookie-based session first
   try{
@@ -55,7 +57,7 @@ async function init(){
 
 function setupAuth(){
   $('loginBtn').addEventListener('click', ()=>{
-    const popup = window.open(`${apiBase}/auth/microsoft`, 'oauth', 'width=600,height=700');
+    const popup = window.open(`${apiAuthBase || apiBase}/auth/microsoft`, 'oauth', 'width=600,height=700');
     const timer = setInterval(()=>{
       try{
         if(!popup || popup.closed){ clearInterval(timer); return; }
@@ -77,7 +79,7 @@ function setupAuth(){
   $('logoutBtn').addEventListener('click', ()=>{
     token = null; localStorage.removeItem('token');
     // attempt logout on server (optional) then return to login
-    try{ fetch(`${apiBase}/auth/logout`, { method: 'POST', credentials: 'include' }).catch(()=>{}); }catch(e){}
+    try{ fetch(`${apiAuthBase || apiBase}/auth/logout`, { method: 'POST', credentials: 'include' }).catch(()=>{}); }catch(e){}
     window.location.href = '/';
   });
 
@@ -151,7 +153,12 @@ async function openChat(id){
         let ref = (typeof m.replied_to === 'object') ? m.replied_to : msgs.find(x=>x.id === m.replied_to) || msgById[m.replied_to];
         if(ref){
           const q = document.createElement('div'); q.className = 'reply-quote';
-          const refText = (typeof ref.content === 'object') ? JSON.stringify(ref.content) : (ref.content||'');
+          let refText = '';
+          if (ref.type === 'emoji' && ref.content) {
+            refText = '[表情] ' + (ref.content.filename || '');
+          } else {
+            refText = (typeof ref.content === 'object') ? (ref.content.text || JSON.stringify(ref.content)) : (ref.content || '');
+          }
           const author = ref.from_user ? (userNameCache[ref.from_user] || ref.from_user) : '';
           q.textContent = (author ? (author + ': ') : '') + (refText || '[已回复]');
           if(typeof m.replied_to === 'string' || typeof m.replied_to === 'number'){
@@ -180,6 +187,10 @@ async function openChat(id){
     noMoreBefore = msgs.length < PAGE_LIMIT;
     // attach scroll handler once
     attachScrollHandler();
+    // show/hide emoji button and panel for global chat
+    const emojiBtn = $('emojiBtn'); const emojiPanelEl = $('emojiPanel');
+    if(emojiBtn) emojiBtn.style.display = isGlobal ? 'none' : 'inline-block';
+    if(emojiPanelEl && isGlobal) emojiPanelEl.style.display = 'none';
     // if opening global chat, ensure reply UI cleared
     if(id === 'global') clearReplyTarget();
     // after rendering initial messages, scroll to bottom
@@ -237,7 +248,12 @@ async function loadMoreMessages(){
       if(!isGlobal && m.replied_to){
         let q = document.createElement('div'); q.className = 'reply-quote';
         const ref = (typeof m.replied_to === 'object') ? m.replied_to : msgById[m.replied_to] || null;
-        const refText = ref ? ((typeof ref.content === 'object') ? JSON.stringify(ref.content) : (ref.content||'')) : '';
+        let refText = '';
+        if (ref && ref.type === 'emoji' && ref.content) {
+          refText = '[表情] ' + (ref.content.filename || '');
+        } else {
+          refText = ref ? ((typeof ref.content === 'object') ? (ref.content.text || JSON.stringify(ref.content)) : (ref.content||'')) : '';
+        }
         const author = ref && ref.from_user ? (userNameCache[ref.from_user] || ref.from_user) : '';
         q.textContent = (author ? (author + ': ') : '') + (refText || '[已回复]');
         if(typeof m.replied_to === 'string' || typeof m.replied_to === 'number'){
@@ -291,7 +307,15 @@ function setReplyTarget(msg){
   replyTarget = msg;
   const preview = $('replyPreview'); const replyText = $('replyText');
   if(preview && replyText){
-    const txt = (typeof msg.content === 'object') ? JSON.stringify(msg.content) : (msg.content||'');
+    // build preview text based on message type
+    let txt = '';
+    if(msg.type === 'emoji' && msg.content){
+      txt = '[表情] ' + (msg.content.filename || '');
+    } else if(typeof msg.content === 'object'){
+      txt = msg.content.text || JSON.stringify(msg.content);
+    } else {
+      txt = msg.content || '';
+    }
     // prefer cached username, otherwise show id then fetch and update
     if(msg.from_user && userNameCache[msg.from_user]){
       replyText.textContent = (userNameCache[msg.from_user] + ': ') + (txt.length > 200 ? (txt.slice(0,200) + '...') : txt);

@@ -5,39 +5,50 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>表情包管理</title>
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
   </head>
   <body>
-    <div class="app">
-      <header>
-        <div class="brand">
-          <h1>表情包</h1>
-          <nav class="nav-links">
-            <a href="/chat.html">会话</a>
-            <a href="/players.html">玩家</a>
-            <a href="/emoji.html" class="active">表情包</a>
-          </nav>
-        </div>
-        <div id="auth">
-          <button id="loginBtn" style="display:none">使用 Microsoft 登录</button>
-          <button id="logoutBtn">登出</button>
-        </div>
-      </header>
+    <div id="app">
+      <el-container style="height:100vh">
+        <el-header style="display:flex;align-items:center;justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:16px">
+            <h2 style="margin:0">表情包</h2>
+            <el-menu mode="horizontal" :ellipsis="false" default-active="" @select="onNav" style="border-bottom:none;background:transparent">
+              <el-menu-item index="chat">会话</el-menu-item>
+              <el-menu-item index="players">玩家</el-menu-item>
+            </el-menu>
+          </div>
+          <div>
+            <el-button size="small" @click="logout">登出</el-button>
+          </div>
+        </el-header>
+        <el-main style="padding:12px">
+          <el-form @submit.native.prevent="upload">
+            <el-form-item>
+              <el-input v-model="name" placeholder="名称（可选）"></el-input>
+            </el-form-item>
+            <el-form-item>
+              <input type="file" ref="fileInput" accept="image/*" />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="upload">上传</el-button>
+            </el-form-item>
+          </el-form>
 
-      <main style="padding:12px">
-        <section>
-          <h3>上传表情包</h3>
-          <form id="uploadForm">
-            <input id="packName" placeholder="名称（可选）" />
-            <input id="packFile" type="file" accept="image/*" />
-            <button type="submit">上传</button>
-          </form>
-
-          <h3 style="margin-top:16px">我的表情包</h3>
-          <div id="packs" style="display:flex;flex-wrap:wrap;gap:12px"></div>
-        </section>
-      </main>
+          <el-divider></el-divider>
+          <div style="display:flex;flex-wrap:wrap;gap:12px">
+            <div v-for="p in packs" :key="p.id" style="width:160px;text-align:center;border:1px solid #eee;padding:8px;border-radius:6px">
+              <img :src="p.url" style="max-width:100%;height:80px;object-fit:contain" />
+              <div style="margin-top:8px">{{ p.name || p.id }}</div>
+              <el-button type="danger" size="mini" @click="del(p.id)" style="margin-top:6px">删除</el-button>
+            </div>
+          </div>
+        </el-main>
+      </el-container>
     </div>
 
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
     <script src="/emoji.js"></script>
   </body>
 </html>

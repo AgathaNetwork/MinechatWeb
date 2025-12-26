@@ -5,31 +5,42 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>玩家列表</title>
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
   </head>
   <body>
-    <div class="app">
-      <header>
-        <div class="brand">
-          <h1>玩家列表</h1>
-          <nav class="nav-links">
-            <a href="/chat.html">会话</a>
-            <a href="/players.html" class="active">玩家</a>
-          </nav>
-        </div>
-        <div id="auth">
-          <button id="loginBtn" style="display:none">使用 Microsoft 登录</button>
-          <button id="logoutBtn">登出</button>
-        </div>
-      </header>
-
-      <main>
-        <section id="players">
-          <div style="margin:8px 0"><input id="userSearch" placeholder="搜索玩家（用户名/部分匹配）" style="width:100%" /></div>
-          <ul id="userList"></ul>
-        </section>
-      </main>
+    <div id="app">
+      <el-container style="height:100vh">
+        <el-header style="display:flex;align-items:center;justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:16px">
+            <h2 style="margin:0">玩家</h2>
+            <el-menu mode="horizontal" :ellipsis="false" default-active="players" @select="onNav" style="border-bottom:none;background:transparent">
+              <el-menu-item index="chat">会话</el-menu-item>
+              <el-menu-item index="players">玩家</el-menu-item>
+            </el-menu>
+          </div>
+          <div>
+            <el-button size="small" @click="logout">登出</el-button>
+          </div>
+        </el-header>
+        <el-main style="padding:12px">
+          <el-input v-model="q" placeholder="搜索玩家（用户名/部分匹配）" clearable @input="onInput"></el-input>
+          <div style="margin-top:12px">
+            <div v-for="u in filtered" :key="u.id" style="display:flex;justify-content:space-between;align-items:center;padding:8px;border-bottom:1px solid #eee">
+              <div>
+                <div style="font-weight:600">{{ u.username || u.id }}</div>
+                <div style="font-size:12px;color:#888">{{ u.id }}</div>
+              </div>
+              <div>
+                <el-button size="small" type="primary" @click="openChat(u.id)">私聊</el-button>
+              </div>
+            </div>
+          </div>
+        </el-main>
+      </el-container>
     </div>
 
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
     <script src="/players.js"></script>
   </body>
 </html>

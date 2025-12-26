@@ -5,63 +5,116 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Minechat</title>
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <style>
+      [v-cloak]{display:none}
+      .msg-row{width:100%}
+      .msg-time{opacity:0;transition:opacity .12s ease;font-size:12px;color:#888;user-select:none;white-space:nowrap}
+      .msg-row:hover .msg-time{opacity:1}
+    </style>
   </head>
   <body>
-    <div class="app">
-      <header>
-        <div class="brand">
-          <h1>Minechat</h1>
-          <nav class="nav-links">
-            <a href="/chat.html" class="active">会话</a>
-            <a href="/players.html">玩家</a>
-          </nav>
-        </div>
-        <div id="auth">
-          <button id="loginBtn" style="display:none">使用 Microsoft 登录</button>
-          <button id="logoutBtn">登出</button>
-        </div>
-      </header>
+    <div id="app" v-cloak>
+      <el-container style="height:100vh">
+        <el-header style="display:flex;align-items:center;justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:16px">
+            <h2 style="margin:0">会话</h2>
+            <el-menu mode="horizontal" :ellipsis="false" default-active="chat" @select="onNav" style="border-bottom:none;background:transparent">
+              <el-menu-item index="chat">会话</el-menu-item>
+              <el-menu-item index="players">玩家</el-menu-item>
+            </el-menu>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <el-button v-if="!isLoggedIn" size="small" type="primary" @click="openLoginPopup">使用 Microsoft 登录</el-button>
+            <el-button v-else size="small" @click="logout">登出</el-button>
+          </div>
+        </el-header>
 
-      <main>
-        <aside id="chats">
-          <div id="globalSection">
-            <h3>全服聊天</h3>
-            <ul id="globalList"><li id="globalChat" data-id="global">全服</li></ul>
-          </div>
-          <h3>会话</h3>
-          <ul id="chatList"></ul>
-        </aside>
-        <section id="conversation">
-          <h2 id="chatTitle"></h2>
-          <div id="messages"></div>
-          <div id="replyPreview" style="display:none; padding:6px; border-left:3px solid #ccc; background:#f7f7f7; margin-bottom:8px;">
-            <small>回复: <span id="replyText"></span></small>
-            <button id="cancelReply" style="margin-left:8px">取消</button>
-          </div>
-          <form id="sendForm">
-            <button id="emojiBtn" type="button" style="margin-right:6px">😊</button>
-            <input id="msgInput" placeholder="输入消息并回车发送" />
-            <button type="submit">发送</button>
-            <div id="emojiPanel" style="display:none; position:absolute; right:20px; bottom:60px; width:320px; max-height:320px; overflow:auto; background:#fff; border:1px solid #ddd; padding:8px; box-shadow:0 4px 12px rgba(0,0,0,0.08);">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-                <strong>我的表情包</strong>
-                <a href="/emoji.html">管理</a>
-              </div>
-              <div id="emojiList" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+        <el-container style="min-height:0">
+          <el-aside width="280px" style="border-right:1px solid #e6e6e6;background:#fff;padding:12px;overflow:auto">
+            <div>
+              <h3 style="margin:0 0 8px 0">全服聊天</h3>
+              <div @click="openGlobal" :style="{cursor:'pointer',padding:'8px',borderRadius:'6px',background: currentChatId==='global' ? '#eef6ff' : 'transparent'}">全服</div>
             </div>
-          </form>
-        </section>
-      </main>
+            <div style="margin-top:12px">
+              <h3 style="margin:0 0 8px 0">会话</h3>
+              <div v-for="c in chats" :key="c.id" @click="onChatClick(c)"
+                   :style="{cursor:'pointer',padding:'8px',borderRadius:'6px',marginBottom:'6px',background: currentChatId===c.id ? '#eef6ff' : 'transparent'}">
+                {{ c.displayName || c.name || (c.members||[]).join(',') }}
+              </div>
+            </div>
+          </el-aside>
 
-      <div id="pasteToken" class="modal" style="display:none">
-        <div class="card">
-          <p>如果弹窗无法自动完成登录，请将后端返回的 JSON 中的 token 粘贴到下方：</p>
-          <textarea id="manualToken" rows="3"></textarea>
-          <button id="applyToken">确认</button>
-        </div>
-      </div>
+          <el-main style="padding:12px;display:flex;flex-direction:column;min-height:0;height:100%">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <h3 style="margin:0">{{ currentChatTitle }}</h3>
+              <div></div>
+            </div>
+
+            <div ref="messagesEl" @scroll="onMessagesScroll" style="flex:1;min-height:0;margin-top:12px;padding:12px;overflow:auto;background:#fff;border:1px solid #eee;border-radius:8px">
+              <div v-for="m in messages" :key="m.id" class="msg-wrapper msg-row" :data-id="m.id"
+                   :style="{ display:'flex', justifyContent: isOwnMessage(m) ? 'flex-end' : 'flex-start', marginBottom:'10px' }">
+                <div :style="{ maxWidth:'80%', display:'flex', flexDirection:'column', alignItems: isOwnMessage(m) ? 'flex-end' : 'flex-start' }">
+                  <div style="font-size:12px;color:#888;margin:0 6px 4px 6px">{{ messageAuthorName(m) }}</div>
+
+                  <div v-if="!isGlobalChat && m.replied_to && repliedRefMessage(m)" class="reply-quote"
+                       style="padding:6px 8px;border-left:3px solid #ccc;background:#f7f7f7;margin:0 0 6px 0;border-radius:6px;width:100%">
+                    <span style="cursor:pointer" @click="scrollToMessage((typeof m.replied_to==='object') ? (m.replied_to.id||'') : m.replied_to)">
+                      {{ messageAuthorName(repliedRefMessage(m)) }}: {{ messageTextPreview(repliedRefMessage(m)) || '[已回复]' }}
+                    </span>
+                  </div>
+
+                  <div style="display:flex;align-items:flex-end;gap:6px">
+                    <span v-if="isOwnMessage(m)" class="msg-time">{{ formatTime(m) }}</span>
+                    <div @contextmenu.prevent="onMessageContextMenu($event, m)"
+                         :style="{ padding:'8px 10px', borderRadius:'12px', border:'1px solid #eee', background: bubbleBackground(m), width:'fit-content', maxWidth:'100%' }">
+                      <template v-if="m.type==='emoji' && m.content && m.content.url">
+                        <img :src="m.content.url" alt="emoji" style="max-height:96px;display:inline-block;vertical-align:middle" />
+                      </template>
+                      <template v-else>
+                        <span style="white-space:pre-wrap;word-break:break-word">{{ messageTextPreview(m) }}</span>
+                      </template>
+                    </div>
+                    <span v-if="!isOwnMessage(m)" class="msg-time">{{ formatTime(m) }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="ctxMenuVisible" @click.stop style="position:fixed;z-index:9999;background:#fff;border:1px solid #dcdfe6;border-radius:6px;padding:6px;min-width:120px"
+                 :style="{ left: ctxMenuX + 'px', top: ctxMenuY + 'px' }">
+              <div style="cursor:pointer;padding:6px 10px" @click="ctxReply">回复</div>
+            </div>
+
+            <div v-if="replyTarget" style="margin-top:10px;padding:8px;border-left:3px solid #ccc;background:#f7f7f7;border-radius:6px">
+              <small>回复: {{ replyPreview }}</small>
+              <el-button size="small" style="margin-left:8px" @click="clearReplyTarget">取消</el-button>
+            </div>
+
+            <div style="margin-top:10px;display:flex;gap:8px;align-items:center;position:relative;flex-shrink:0">
+              <el-button v-if="!isGlobalChat" type="default" @click.stop="toggleEmojiPanel">😊</el-button>
+              <el-input v-model="msgInput" placeholder="输入消息" @keyup.enter="sendText"></el-input>
+              <el-button type="primary" @click="sendText">发送</el-button>
+
+              <div v-if="emojiPanelVisible" @click.stop style="position:absolute;left:0;bottom:46px;width:320px;max-height:320px;overflow:auto;background:#fff;border:1px solid #ddd;padding:8px;box-shadow:0 4px 12px rgba(0,0,0,0.08);border-radius:8px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                  <strong>我的表情包</strong>
+                  <el-button size="small" @click="goEmojiManage">管理</el-button>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px">
+                  <button v-for="p in emojiPacks" :key="p.id" @click="sendEmoji(p)" style="border:none;background:transparent;padding:4px;cursor:pointer">
+                    <img :src="p.url" alt="emoji" style="width:48px;height:48px;object-fit:contain" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </el-main>
+        </el-container>
+      </el-container>
     </div>
 
-    <script src="/app.js"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+    <script src="/chat.js"></script>
   </body>
 </html>
