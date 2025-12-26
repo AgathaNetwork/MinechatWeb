@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>玩家列表</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header>
+        <div class="brand">
+          <h1>玩家列表</h1>
+          <nav class="nav-links">
+            <a href="/chat.html">会话</a>
+            <a href="/players.html" class="active">玩家</a>
+          </nav>
+        </div>
+        <div id="auth">
+          <button id="loginBtn" style="display:none">使用 Microsoft 登录</button>
+          <button id="logoutBtn">登出</button>
+        </div>
+      </header>
+
+      <main>
+        <section id="players">
+          <div style="margin:8px 0"><input id="userSearch" placeholder="搜索玩家（用户名/部分匹配）" style="width:100%" /></div>
+          <ul id="userList"></ul>
+        </section>
+      </main>
+    </div>
+
+    <script src="/players.js"></script>
+  </body>
+</html>
