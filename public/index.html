@@ -5,59 +5,41 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Minechat 登录</title>
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
     <style>
-      .login-box{max-width:420px;margin:80px auto;padding:24px;background:#fff;border-radius:8px;border:1px solid #e6e6e6}
-      .center{text-align:center}
+      [v-cloak]{display:none}
     </style>
   </head>
   <body>
-    <div class="app">
-      <div class="login-box">
-        <h2 class="center">欢迎使用 Minechat</h2>
-        <p>请使用 Microsoft 帐号登录。</p>
-        <div style="display:flex;gap:8px;justify-content:center;margin-top:12px">
-          <button id="loginBtn">使用 Microsoft 登录</button>
-        </div>
-        <p style="margin-top:16px">如果登录成功，页面会自动跳转到聊天界面；若弹窗无法自动完成登录，请在弹窗返回的 JSON 中复制 `token`，并使用下方输入框粘贴。</p>
-        <textarea id="manualToken" rows="3" style="width:100%"></textarea>
-        <div style="display:flex;justify-content:center;margin-top:8px">
-          <button id="applyToken">使用粘贴的 token 登录</button>
-        </div>
-      </div>
+    <div id="app" v-cloak>
+      <el-container style="height:100vh">
+        <el-main style="display:flex;align-items:center;justify-content:center;padding:12px">
+          <el-card style="max-width:520px;width:100%">
+            <template #header>
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <span style="font-weight:600">欢迎使用 Minechat</span>
+                <span style="font-size:12px;color:#888" v-if="checking">检查登录状态中…</span>
+              </div>
+            </template>
+
+            <div>
+              <div v-if="hasSession" style="margin-bottom:12px">
+                <el-alert type="success" :closable="false" show-icon title="检测到已登录的会话"></el-alert>
+                <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end">
+                  <el-button type="primary" @click="gotoChat">进入会话</el-button>
+                </div>
+              </div>
+
+              <p style="margin-top:0">请使用 Microsoft 帐号登录。</p>
+              <el-button type="primary" @click="openLoginPopup">使用 Microsoft 登录</el-button>
+            </div>
+          </el-card>
+        </el-main>
+      </el-container>
     </div>
 
-    <script>
-      (async function(){
-        const conf = await fetch('/config').then(r=>r.json());
-        const apiBase = conf.apiBase;
-
-        async function checkSession(){
-          try{
-            const res = await fetch(`${apiBase}/chats`, { credentials: 'include' });
-            return res.ok;
-          }catch(e){ return false; }
-        }
-
-        // if session valid -> go to chat.html
-        if (await checkSession()) { window.location.href = '/chat.html'; return; }
-
-        document.getElementById('loginBtn').addEventListener('click', ()=>{
-          const popup = window.open(`${apiBase}/auth/microsoft`, 'oauth', 'width=600,height=700');
-          const poll = setInterval(async ()=>{
-            if (!popup || popup.closed) {
-              clearInterval(poll);
-              if (await checkSession()) window.location.href = '/chat.html';
-            }
-          }, 800);
-        });
-
-        document.getElementById('applyToken').addEventListener('click', ()=>{
-          const t = document.getElementById('manualToken').value.trim();
-          if (!t) return alert('请输入 token');
-          localStorage.setItem('token', t);
-          window.location.href = '/chat.html';
-        });
-      })();
-    </script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+    <script src="/login.js"></script>
   </body>
 </html>

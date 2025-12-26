@@ -9,19 +9,50 @@ createApp({
     const users = ref([]);
     const filtered = ref([]);
 
+    function tokenValue(){
+      const t = (token.value || '').trim();
+      return t ? t : null;
+    }
+
+    function clearBadToken(){
+      token.value = null;
+      try{ localStorage.removeItem('token'); }catch(e){}
+    }
+
     function authHeaders(extra){
       const h = Object.assign({}, extra || {});
-      if(token.value) h['Authorization'] = `Bearer ${token.value}`;
+      const t = tokenValue();
+      if(t) h['Authorization'] = `Bearer ${t}`;
       return h;
+    }
+
+    async function safeFetch(url, options, allowRetry){
+      const opt = Object.assign({ credentials: 'include' }, options || {});
+      opt.headers = authHeaders(opt.headers);
+      const res = await fetch(url, opt);
+
+      const canRetry = allowRetry !== false;
+      if(canRetry && res.status === 401){
+        let txt = '';
+        try{ txt = await res.clone().text(); }catch(e){}
+        if(/invalid token/i.test(txt)){
+          clearBadToken();
+          const opt2 = Object.assign({}, opt);
+          const h2 = Object.assign({}, opt2.headers || {});
+          delete h2.Authorization;
+          delete h2.authorization;
+          opt2.headers = h2;
+          return fetch(url, opt2);
+        }
+      }
+
+      return res;
     }
 
     async function fetchConfig(){ const conf = await fetch('/config').then(r=>r.json()); apiBase.value = conf.apiProxyBase || conf.apiBase; }
     async function loadUsers(){
       try{
-        const res = await fetch(`${apiBase.value}/users`, {
-          credentials: 'include',
-          headers: authHeaders(),
-        });
+        const res = await safeFetch(`${apiBase.value}/users`);
         if(res.status === 204){
           users.value = [];
           filtered.value = [];
@@ -43,11 +74,7 @@ createApp({
 
     async function openChat(userId){
       try{
-        const res = await fetch(`${apiBase.value}/chats/with/${encodeURIComponent(userId)}`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: authHeaders(),
-        });
+        const res = await safeFetch(`${apiBase.value}/chats/with/${encodeURIComponent(userId)}`, { method: 'POST' });
         if(!res.ok){
           const txt = await res.text().catch(()=> '');
           throw new Error(`open/create chat failed: ${res.status} ${txt}`);

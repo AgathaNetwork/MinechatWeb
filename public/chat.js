@@ -34,15 +34,55 @@ createApp({
 
     const selfUserId = ref(null);
 
+    const fileInputEl = ref(null);
+
     const messagesEl = ref(null);
 
     const isGlobalChat = computed(() => currentChatId.value === 'global');
     const isLoggedIn = computed(() => !!token.value || !!sessionOk.value);
 
+    function tokenValue() {
+      const t = (token.value || '').trim();
+      return t ? t : null;
+    }
+
+    function clearBadToken() {
+      token.value = null;
+      try {
+        localStorage.removeItem('token');
+      } catch (e) {}
+    }
+
     function authHeaders(extra) {
       const h = Object.assign({}, extra || {});
-      if (token.value) h['Authorization'] = `Bearer ${token.value}`;
+      const t = tokenValue();
+      if (t) h['Authorization'] = `Bearer ${t}`;
       return h;
+    }
+
+    async function safeFetch(url, options, allowRetry) {
+      const opt = Object.assign({ credentials: 'include' }, options || {});
+      opt.headers = authHeaders(opt.headers);
+
+      const res = await fetch(url, opt);
+      const canRetry = allowRetry !== false;
+      if (canRetry && res.status === 401) {
+        let txt = '';
+        try {
+          txt = await res.clone().text();
+        } catch (e) {}
+        if (/invalid token/i.test(txt)) {
+          clearBadToken();
+          const opt2 = Object.assign({}, opt);
+          const h2 = Object.assign({}, opt2.headers || {});
+          delete h2.Authorization;
+          delete h2.authorization;
+          opt2.headers = h2;
+          return fetch(url, opt2);
+        }
+      }
+
+      return res;
     }
 
     function decodeJwtPayload(jwt) {
@@ -76,10 +116,7 @@ createApp({
       for (const ep of endpoints) {
         try {
           const url = ep.startsWith('/api/') ? ep : `${apiBase.value}${ep}`;
-          const res = await fetch(url, {
-            credentials: 'include',
-            headers: authHeaders(),
-          });
+          const res = await safeFetch(url);
           if (!res.ok) continue;
           const data = await res.json().catch(() => null);
           if (!data || typeof data !== 'object') continue;
@@ -124,7 +161,23 @@ createApp({
     function openLoginPopup() {
       const base = apiAuthBase.value || apiBase.value;
       const popup = window.open(`${base}/auth/microsoft`, 'oauth', 'width=600,height=700');
+
+      // Poll session instead of reading popup DOM (usually cross-origin).
+      let tries = 0;
       const timer = setInterval(async () => {
+        tries++;
+        try {
+          const ok = await checkSession();
+          if (ok) {
+            clearInterval(timer);
+            try {
+              if (popup && !popup.closed) popup.close();
+            } catch (e) {}
+            await loadChats();
+            return;
+          }
+        } catch (e) {}
+
         try {
           if (!popup || popup.closed) {
             clearInterval(timer);
@@ -152,6 +205,11 @@ createApp({
         } catch (e) {
           // cross-origin until final redirect
         }
+
+        // stop after ~2 minutes
+        if (tries > 240) {
+          clearInterval(timer);
+        }
       }, 500);
     }
 
@@ -172,10 +230,7 @@ createApp({
       await Promise.allSettled(
         missing.map(async (id) => {
           try {
-            const res = await fetch(`${apiBase.value}/users/${encodeURIComponent(id)}`, {
-              credentials: 'include',
-              headers: authHeaders(),
-            });
+            const res = await safeFetch(`${apiBase.value}/users/${encodeURIComponent(id)}`);
             if (!res.ok) throw new Error('no user');
             const u = await res.json();
             userNameCache[id] = u.username || u.displayName || id;
@@ -184,6 +239,17 @@ createApp({
           }
         })
       );
+    }
+
+    function normalizeMessage(m, isGlobal) {
+      if (!m || typeof m !== 'object') return m;
+      // unify author id
+      if (m.from && !m.from_user) m.from_user = m.from;
+      // unify reply field
+      if (m.repliedTo !== undefined && m.replied_to === undefined) m.replied_to = m.repliedTo;
+      // global: backend may use `from`
+      if (isGlobal && m.from && !m.from_user) m.from_user = m.from;
+      return m;
     }
 
     function messageAuthorName(m) {
@@ -198,6 +264,21 @@ createApp({
       if (m.__own === true) return true;
       if (!m.from_user || !selfUserId.value) return false;
       return String(m.from_user) === String(selfUserId.value);
+    }
+
+    function isImageFile(m) {
+      const mm = m && m.content && (m.content.mimetype || m.content.type);
+      return !!mm && String(mm).startsWith('image/');
+    }
+
+    function isVideoFile(m) {
+      const mm = m && m.content && (m.content.mimetype || m.content.type);
+      return !!mm && String(mm).startsWith('video/');
+    }
+
+    function fileDisplayUrl(m) {
+      if (!m || !m.content) return '';
+      return m.content.__localUrl || m.content.thumbnailUrl || m.content.url || '';
     }
 
     function bubbleBackground(m) {
@@ -325,10 +406,7 @@ createApp({
 
     async function loadChats() {
       try {
-        const res = await fetch(`${apiBase.value}/chats`, {
-          credentials: 'include',
-          headers: authHeaders(),
-        });
+        const res = await safeFetch(`${apiBase.value}/chats`);
         if (!res.ok) throw new Error('未登录或请求失败');
         chats.value = await res.json();
 
@@ -355,10 +433,7 @@ createApp({
         } else {
           currentChatTitle.value = '';
           try {
-            const metaRes = await fetch(`${apiBase.value}/chats/${encodeURIComponent(id)}`, {
-              credentials: 'include',
-              headers: authHeaders(),
-            });
+            const metaRes = await safeFetch(`${apiBase.value}/chats/${encodeURIComponent(id)}`);
             if (metaRes.ok) {
               const chatMeta = await metaRes.json();
               currentChatTitle.value = chatMeta.displayName || chatMeta.name || '';
@@ -367,10 +442,7 @@ createApp({
         }
 
         const msgUrl = buildMessagesUrl(id, { limit: PAGE_LIMIT });
-        const res = await fetch(msgUrl, {
-          credentials: 'include',
-          headers: authHeaders(),
-        });
+        const res = await safeFetch(msgUrl);
         if (!res.ok) throw new Error('加载消息失败');
         let msgs = await res.json();
         // Safety: if backend ignores limit and returns full history, only render latest page.
@@ -381,12 +453,13 @@ createApp({
         for (const k of Object.keys(msgById)) delete msgById[k];
 
         msgs.forEach((m) => {
-          if (isGlobal && m && m.from && !m.from_user) m.from_user = m.from;
+          normalizeMessage(m, isGlobal);
           if (m && m.id) msgById[m.id] = m;
         });
 
         const userIds = new Set();
         msgs.forEach((m) => {
+          normalizeMessage(m, isGlobal);
           if (m && m.from_user) userIds.add(m.from_user);
           if (!isGlobal && m && m.replied_to) {
             const ref = typeof m.replied_to === 'object' ? m.replied_to : msgById[m.replied_to];
@@ -395,7 +468,7 @@ createApp({
         });
         await fetchMissingUserNames(userIds);
 
-        messages.value = msgs.slice();
+        messages.value = msgs.slice().map((m) => normalizeMessage(m, isGlobal));
         noMoreBefore.value = !Array.isArray(msgs) || msgs.length < PAGE_LIMIT;
 
         await nextTick();
@@ -423,7 +496,7 @@ createApp({
         const prevScrollHeight = messagesEl.value.scrollHeight;
         const prevScrollTop = messagesEl.value.scrollTop;
 
-        const res = await fetch(url, { credentials: 'include', headers: authHeaders() });
+        const res = await safeFetch(url);
         if (!res.ok) throw new Error('加载更多消息失败');
         const more = await res.json();
         if (!more || more.length === 0) {
@@ -432,12 +505,13 @@ createApp({
         }
 
         more.forEach((m) => {
-          if (isGlobal && m && m.from && !m.from_user) m.from_user = m.from;
+          normalizeMessage(m, isGlobal);
           if (m && m.id) msgById[m.id] = m;
         });
 
         const moreUserIds = new Set();
         more.forEach((m) => {
+          normalizeMessage(m, isGlobal);
           if (m && m.from_user) moreUserIds.add(m.from_user);
           if (!isGlobal && m && m.replied_to) {
             const ref = typeof m.replied_to === 'object' ? m.replied_to : msgById[m.replied_to];
@@ -446,7 +520,7 @@ createApp({
         });
         await fetchMissingUserNames(moreUserIds);
 
-        messages.value = more.concat(messages.value);
+        messages.value = more.concat(messages.value).map((m) => normalizeMessage(m, isGlobal));
 
         await nextTick();
         const newScrollHeight = messagesEl.value.scrollHeight;
@@ -491,25 +565,35 @@ createApp({
 
       try {
         if (isGlobalChat.value) {
-          const res = await fetch(`${apiBase.value}/global/messages`, {
+          const res = await safeFetch(`${apiBase.value}/global/messages`, {
             method: 'POST',
-            credentials: 'include',
-            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content: text }),
           });
           if (!res.ok) throw new Error('发送失败');
+          const serverMsg = await res.json().catch(() => null);
           optimisticMsg.__status = 'sent';
+          if (serverMsg && typeof serverMsg === 'object') {
+            normalizeMessage(serverMsg, true);
+            optimisticMsg.id = serverMsg.id || optimisticMsg.id;
+            optimisticMsg.createdAt = serverMsg.created_at || serverMsg.createdAt || optimisticMsg.createdAt;
+          }
         } else {
           const payload = { type: 'text', content: text };
           if (replyTarget.value) payload.repliedTo = replyTarget.value.id || replyTarget.value;
-          const res = await fetch(`${apiBase.value}/chats/${encodeURIComponent(currentChatId.value)}/messages`, {
+          const res = await safeFetch(`${apiBase.value}/chats/${encodeURIComponent(currentChatId.value)}/messages`, {
             method: 'POST',
-            credentials: 'include',
-            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
           });
           if (!res.ok) throw new Error('发送失败');
+          const serverMsg = await res.json().catch(() => null);
           optimisticMsg.__status = 'sent';
+          if (serverMsg && typeof serverMsg === 'object') {
+            normalizeMessage(serverMsg, false);
+            optimisticMsg.id = serverMsg.id || optimisticMsg.id;
+            optimisticMsg.createdAt = serverMsg.created_at || serverMsg.createdAt || optimisticMsg.createdAt;
+          }
           clearReplyTarget();
         }
       } catch (e) {
@@ -528,10 +612,7 @@ createApp({
       if (!emojiPanelVisible.value) return;
 
       try {
-        const res = await fetch(`${apiBase.value}/emoji`, {
-          credentials: 'include',
-          headers: authHeaders(),
-        });
+        const res = await safeFetch(`${apiBase.value}/emoji`);
         if (!res.ok) throw new Error('load emoji failed');
         emojiPacks.value = await res.json();
       } catch (e) {
@@ -576,18 +657,111 @@ createApp({
         };
         if (replyTarget.value) payload.repliedTo = replyTarget.value.id || replyTarget.value;
 
-        const res = await fetch(`${apiBase.value}/chats/${encodeURIComponent(currentChatId.value)}/messages`, {
+        const res = await safeFetch(`${apiBase.value}/chats/${encodeURIComponent(currentChatId.value)}/messages`, {
           method: 'POST',
-          credentials: 'include',
-          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
         if (!res.ok) throw new Error('发送失败');
+        const serverMsg = await res.json().catch(() => null);
         optimisticMsg.__status = 'sent';
+        if (serverMsg && typeof serverMsg === 'object') {
+          normalizeMessage(serverMsg, false);
+          optimisticMsg.id = serverMsg.id || optimisticMsg.id;
+          optimisticMsg.createdAt = serverMsg.created_at || serverMsg.createdAt || optimisticMsg.createdAt;
+        }
       } catch (e) {
         console.error(e);
         optimisticMsg.__status = 'failed';
         ElementPlus.ElMessage.error('发送表情失败');
+      } finally {
+        await nextTick();
+        if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
+      }
+    }
+
+    function openFilePicker() {
+      if (isGlobalChat.value) return;
+      try {
+        const el = fileInputEl.value;
+        if (!el) return;
+        el.value = '';
+        el.click();
+      } catch (e) {}
+    }
+
+    async function onFileSelected(ev) {
+      try {
+        const files = ev && ev.target && ev.target.files;
+        const file = files && files[0];
+        if (!file) return;
+        await sendFile(file);
+      } finally {
+        try {
+          if (ev && ev.target) ev.target.value = '';
+        } catch (e) {}
+      }
+    }
+
+    async function sendFile(file) {
+      if (!currentChatId.value) return ElementPlus.ElMessage.warning('先选择会话');
+      if (isGlobalChat.value) return ElementPlus.ElMessage.warning('全服聊天暂不支持发送文件');
+
+      const tempId = `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      let localUrl = '';
+      try {
+        localUrl = URL.createObjectURL(file);
+      } catch (e) {}
+
+      const optimisticMsg = {
+        id: tempId,
+        type: 'file',
+        content: {
+          url: '',
+          __localUrl: localUrl,
+          filename: file.name,
+          mimetype: file.type,
+        },
+        from_user: selfUserId.value || '__me__',
+        createdAt: new Date().toISOString(),
+        __own: true,
+        __status: 'sending',
+      };
+      if (replyTarget.value) optimisticMsg.replied_to = replyTarget.value;
+
+      msgById[tempId] = optimisticMsg;
+      messages.value = messages.value.concat([optimisticMsg]);
+      await nextTick();
+      if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
+
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('type', 'file');
+        if (replyTarget.value) fd.append('repliedTo', replyTarget.value.id || String(replyTarget.value));
+
+        const res = await safeFetch(`${apiBase.value}/chats/${encodeURIComponent(currentChatId.value)}/messages`, {
+          method: 'POST',
+          body: fd,
+        });
+        if (!res.ok) throw new Error('发送失败');
+        const serverMsg = await res.json().catch(() => null);
+        optimisticMsg.__status = 'sent';
+        if (serverMsg && typeof serverMsg === 'object') {
+          normalizeMessage(serverMsg, false);
+          optimisticMsg.id = serverMsg.id || optimisticMsg.id;
+          optimisticMsg.createdAt = serverMsg.created_at || serverMsg.createdAt || optimisticMsg.createdAt;
+          // server content contains url/thumbnailUrl/mimetype
+          if (serverMsg.content) {
+            optimisticMsg.content = Object.assign({}, serverMsg.content);
+            if (localUrl) optimisticMsg.content.__localUrl = localUrl;
+          }
+        }
+        clearReplyTarget();
+      } catch (e) {
+        console.error(e);
+        optimisticMsg.__status = 'failed';
+        ElementPlus.ElMessage.error('发送文件失败');
       } finally {
         await nextTick();
         if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
@@ -637,6 +811,7 @@ createApp({
       replyPreview,
       emojiPanelVisible,
       emojiPacks,
+      fileInputEl,
       messagesEl,
       isGlobalChat,
       isLoggedIn,
@@ -653,6 +828,9 @@ createApp({
       isOwnMessage,
       bubbleBackground,
       formatTime,
+      isImageFile,
+      isVideoFile,
+      fileDisplayUrl,
 
       // actions
       openLoginPopup,
@@ -667,6 +845,8 @@ createApp({
       sendText,
       toggleEmojiPanel,
       sendEmoji,
+      openFilePicker,
+      onFileSelected,
       goEmojiManage,
       onNav,
     };

@@ -71,6 +71,19 @@
                       <template v-if="m.type==='emoji' && m.content && m.content.url">
                         <img :src="m.content.url" alt="emoji" style="max-height:96px;display:inline-block;vertical-align:middle" />
                       </template>
+                      <template v-else-if="m.type==='file' && m.content && isImageFile(m)">
+                        <img :src="fileDisplayUrl(m)" :alt="m.content.filename || 'image'" style="max-width:320px;max-height:240px;display:block;border-radius:8px" />
+                        <div v-if="m.content.filename" style="margin-top:6px;font-size:12px;color:#666">{{ m.content.filename }}</div>
+                      </template>
+                      <template v-else-if="m.type==='file' && m.content && isVideoFile(m)">
+                        <video :src="fileDisplayUrl(m)" controls style="max-width:320px;max-height:240px;display:block;border-radius:8px" :poster="m.content.thumbnailUrl || ''"></video>
+                        <div v-if="m.content.filename" style="margin-top:6px;font-size:12px;color:#666">{{ m.content.filename }}</div>
+                      </template>
+                      <template v-else-if="m.type==='file' && m.content && m.content.url">
+                        <a :href="m.content.url" target="_blank" rel="noopener" style="color:#0366d6;text-decoration:none">
+                          {{ m.content.filename || '下载文件' }}
+                        </a>
+                      </template>
                       <template v-else>
                         <span style="white-space:pre-wrap;word-break:break-word">{{ messageTextPreview(m) }}</span>
                       </template>
@@ -92,6 +105,8 @@
             </div>
 
             <div style="margin-top:10px;display:flex;gap:8px;align-items:center;position:relative;flex-shrink:0">
+              <input ref="fileInputEl" type="file" accept="image/*,video/*" style="display:none" @change="onFileSelected" />
+              <el-button v-if="!isGlobalChat" type="default" @click.stop="openFilePicker">文件</el-button>
               <el-button v-if="!isGlobalChat" type="default" @click.stop="toggleEmojiPanel">😊</el-button>
               <el-input v-model="msgInput" placeholder="输入消息" @keyup.enter="sendText"></el-input>
               <el-button type="primary" @click="sendText">发送</el-button>
