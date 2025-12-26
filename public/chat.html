@@ -22,11 +22,13 @@
             <el-menu mode="horizontal" :ellipsis="false" default-active="chat" @select="onNav" style="border-bottom:none;background:transparent">
               <el-menu-item index="chat">会话</el-menu-item>
               <el-menu-item index="players">玩家</el-menu-item>
+              <el-menu-item index="me">我</el-menu-item>
             </el-menu>
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <el-button v-if="!isLoggedIn" size="small" type="primary" @click="openLoginPopup">使用 Microsoft 登录</el-button>
             <el-button v-else size="small" @click="logout">登出</el-button>
+            <el-avatar v-if="isLoggedIn && selfFaceUrl" :src="selfFaceUrl" :size="28"></el-avatar>
           </div>
         </el-header>
 
@@ -47,7 +49,10 @@
 
           <el-main style="padding:12px;display:flex;flex-direction:column;min-height:0;height:100%">
             <div style="display:flex;align-items:center;justify-content:space-between">
-              <h3 style="margin:0">{{ currentChatTitle }}</h3>
+              <div style="display:flex;align-items:center;gap:8px">
+                <el-avatar v-if="currentChatFaceUrl" :src="currentChatFaceUrl" :size="32"></el-avatar>
+                <h3 style="margin:0">{{ currentChatTitle }}</h3>
+              </div>
               <div></div>
             </div>
 

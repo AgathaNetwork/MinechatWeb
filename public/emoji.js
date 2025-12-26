@@ -5,6 +5,7 @@ createApp({
   setup(){
     const apiBase = ref('');
     const token = ref(localStorage.getItem('token') || null);
+    const selfFaceUrl = ref('');
     const name = ref('');
     const packs = ref([]);
     const fileInput = ref(null);
@@ -49,6 +50,49 @@ createApp({
       return res;
     }
 
+    function decodeJwtPayload(jwt){
+      try{
+        const parts = String(jwt || '').split('.');
+        if(parts.length !== 3) return null;
+        const payload = parts[1].replace(/-/g,'+').replace(/_/g,'/');
+        const padded = payload + '='.repeat((4 - (payload.length % 4)) % 4);
+        const json = atob(padded);
+        return JSON.parse(json);
+      }catch(e){
+        return null;
+      }
+    }
+
+    async function resolveSelfFace(){
+      // 1) Best-effort /users/me
+      try{
+        const res = await safeFetch(`${apiBase.value}/users/me`);
+        if(res.ok){
+          const me = await res.json().catch(()=>null);
+          if(me && typeof me === 'object'){
+            const face = me.faceUrl || me.face_url || me.face;
+            if(face){ selfFaceUrl.value = String(face); return; }
+          }
+        }
+      }catch(e){}
+
+      // 2) Fallback: infer id from JWT and match in /users list
+      const t = tokenValue();
+      if(!t) return;
+      const payload = decodeJwtPayload(t);
+      const meId = payload && (payload.userId || payload.uid || payload.id || payload.sub);
+      if(!meId) return;
+      try{
+        const res = await safeFetch(`${apiBase.value}/users`);
+        if(!res.ok) return;
+        const list = await res.json().catch(()=>null);
+        if(!Array.isArray(list)) return;
+        const u = list.find(x => x && String(x.id) === String(meId));
+        const face = u && (u.faceUrl || u.face_url || u.face);
+        if(face) selfFaceUrl.value = String(face);
+      }catch(e){}
+    }
+
     async function fetchConfig(){
       const conf = await fetch('/config').then(r=>r.json());
       apiBase.value = conf.apiProxyBase || conf.apiBase;
@@ -86,9 +130,10 @@ createApp({
     function onNav(key){
       if(key === 'chat') window.location.href = '/chat.html';
       else if(key === 'players') window.location.href = '/players.html';
+      else if(key === 'me') window.location.href = '/me.html';
     }
 
-    onMounted(async ()=>{ await fetchConfig(); await loadPacks(); });
-    return { name, packs, fileInput, upload, del, logout, onNav };
+    onMounted(async ()=>{ await fetchConfig(); await resolveSelfFace(); await loadPacks(); });
+    return { name, packs, fileInput, upload, del, logout, onNav, selfFaceUrl };
   }
 }).use(ElementPlus).mount('#app');

@@ -16,10 +16,12 @@
             <el-menu mode="horizontal" :ellipsis="false" default-active="players" @select="onNav" style="border-bottom:none;background:transparent">
               <el-menu-item index="chat">会话</el-menu-item>
               <el-menu-item index="players">玩家</el-menu-item>
+              <el-menu-item index="me">我</el-menu-item>
             </el-menu>
           </div>
-          <div>
+          <div style="display:flex;align-items:center;gap:8px">
             <el-button size="small" @click="logout">登出</el-button>
+            <el-avatar v-if="selfFaceUrl" :src="selfFaceUrl" :size="28"></el-avatar>
           </div>
         </el-header>
         <el-main style="padding:12px">

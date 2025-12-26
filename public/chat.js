@@ -11,10 +11,15 @@ createApp({
     const chats = ref([]);
     const currentChatId = ref(null);
     const currentChatTitle = ref('');
+    const currentChatFaceUrl = ref('');
 
     const messages = ref([]);
     const msgById = reactive({});
     const userNameCache = reactive({});
+    const userFaceCache = reactive({});
+
+    const selfFaceUrl = ref('');
+    const usersIndexLoaded = ref(false);
 
     const loadingMore = ref(false);
     const noMoreBefore = ref(false);
@@ -98,6 +103,58 @@ createApp({
       }
     }
 
+    function getCachedFaceUrl(userId) {
+      if (!userId) return '';
+      const v = userFaceCache[String(userId)];
+      return v ? String(v) : '';
+    }
+
+    async function loadUsersIndex() {
+      try {
+        const res = await safeFetch(`${apiBase.value}/users`);
+        if (!res.ok) return;
+        const list = await res.json().catch(() => null);
+        if (!Array.isArray(list)) return;
+        for (const u of list) {
+          if (!u || typeof u !== 'object') continue;
+          const id = u.id !== undefined && u.id !== null ? String(u.id) : '';
+          if (!id) continue;
+          userNameCache[id] = u.username || u.displayName || userNameCache[id] || id;
+          const face = u.faceUrl || u.face_url || u.face || '';
+          if (face) userFaceCache[id] = face;
+        }
+        usersIndexLoaded.value = true;
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    async function resolveSelfProfile() {
+      // Best-effort: try /users/me (if backend provides it)
+      try {
+        const res = await safeFetch(`${apiBase.value}/users/me`);
+        if (res.ok) {
+          const me = await res.json().catch(() => null);
+          if (me && typeof me === 'object') {
+            const id = me.id || me.userId || me.uid;
+            if (id !== undefined && id !== null) selfUserId.value = String(id);
+            const face = me.faceUrl || me.face_url || me.face;
+            if (face) selfFaceUrl.value = String(face);
+            const name = me.username || me.displayName;
+            if (name && selfUserId.value) userNameCache[selfUserId.value] = String(name);
+            return;
+          }
+        }
+      } catch (e) {}
+
+      // Fallback: infer id, then use users index cache
+      await resolveSelfUserId();
+      if (selfUserId.value) {
+        const face = getCachedFaceUrl(selfUserId.value);
+        if (face) selfFaceUrl.value = face;
+      }
+    }
+
     async function resolveSelfUserId() {
       // 1) Prefer extracting from JWT token (no network)
       if (token.value) {
@@ -173,6 +230,8 @@ createApp({
             try {
               if (popup && !popup.closed) popup.close();
             } catch (e) {}
+            await loadUsersIndex();
+            await resolveSelfProfile();
             await loadChats();
             return;
           }
@@ -200,6 +259,8 @@ createApp({
             localStorage.setItem('token', token.value);
             popup.close();
             clearInterval(timer);
+            await loadUsersIndex();
+            await resolveSelfProfile();
             await loadChats();
           }
         } catch (e) {
@@ -234,6 +295,8 @@ createApp({
             if (!res.ok) throw new Error('no user');
             const u = await res.json();
             userNameCache[id] = u.username || u.displayName || id;
+            const face = (u && (u.faceUrl || u.face_url || u.face)) || '';
+            if (face) userFaceCache[id] = face;
           } catch (e) {
             userNameCache[id] = id;
           }
@@ -406,6 +469,10 @@ createApp({
 
     async function loadChats() {
       try {
+        if (!usersIndexLoaded.value) {
+          await loadUsersIndex();
+          await resolveSelfProfile();
+        }
         const res = await safeFetch(`${apiBase.value}/chats`);
         if (!res.ok) throw new Error('未登录或请求失败');
         chats.value = await res.json();
@@ -424,6 +491,7 @@ createApp({
     async function openChat(id) {
       currentChatId.value = id;
       emojiPanelVisible.value = false;
+      currentChatFaceUrl.value = '';
       if (id === 'global') clearReplyTarget();
 
       const isGlobal = id === 'global';
@@ -432,11 +500,45 @@ createApp({
           currentChatTitle.value = '全服';
         } else {
           currentChatTitle.value = '';
+
+          // Guess peer user for 1:1 chat and show avatar if available
+          try {
+            const chatObj = (chats.value || []).find((c) => c && c.id === id);
+            let members = chatObj && Array.isArray(chatObj.members) ? chatObj.members : null;
+            if (!members || members.length === 0) {
+              // some backends may use memberIds
+              members = chatObj && Array.isArray(chatObj.memberIds) ? chatObj.memberIds : members;
+            }
+            if (members && members.length === 2 && selfUserId.value) {
+              const otherId = members.map(String).find((mid) => String(mid) !== String(selfUserId.value));
+              if (otherId) {
+                currentChatFaceUrl.value = getCachedFaceUrl(otherId);
+                if (!currentChatTitle.value) currentChatTitle.value = userNameCache[otherId] || otherId;
+              }
+            }
+          } catch (e) {}
+
           try {
             const metaRes = await safeFetch(`${apiBase.value}/chats/${encodeURIComponent(id)}`);
             if (metaRes.ok) {
               const chatMeta = await metaRes.json();
               currentChatTitle.value = chatMeta.displayName || chatMeta.name || '';
+
+              try {
+                const members = Array.isArray(chatMeta.members)
+                  ? chatMeta.members
+                  : Array.isArray(chatMeta.memberIds)
+                    ? chatMeta.memberIds
+                    : null;
+                if (members && members.length === 2 && selfUserId.value) {
+                  const otherId = members.map(String).find((mid) => String(mid) !== String(selfUserId.value));
+                  if (otherId) {
+                    const face = getCachedFaceUrl(otherId);
+                    if (face) currentChatFaceUrl.value = face;
+                    if (!currentChatTitle.value) currentChatTitle.value = userNameCache[otherId] || otherId;
+                  }
+                }
+              } catch (e) {}
             }
           } catch (e) {}
         }
@@ -783,12 +885,14 @@ createApp({
     function onNav(key) {
       if (key === 'chat') window.location.href = '/chat.html';
       else if (key === 'players') window.location.href = '/players.html';
+      else if (key === 'me') window.location.href = '/me.html';
     }
 
     onMounted(async () => {
       await fetchConfig();
       await checkSession();
-      await resolveSelfUserId();
+      await loadUsersIndex();
+      await resolveSelfProfile();
       if (isLoggedIn.value) {
         await loadChats();
       }
@@ -805,6 +909,8 @@ createApp({
       chats,
       currentChatId,
       currentChatTitle,
+      currentChatFaceUrl,
+      selfFaceUrl,
       messages,
       msgInput,
       replyTarget,
