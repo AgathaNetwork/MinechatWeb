@@ -24,6 +24,10 @@
 
       <main>
         <aside id="chats">
+          <div id="globalSection">
+            <h3>全服聊天</h3>
+            <ul id="globalList"><li id="globalChat" data-id="global">全服</li></ul>
+          </div>
           <h3>会话</h3>
           <ul id="chatList"></ul>
         </aside>
@@ -35,8 +39,16 @@
             <button id="cancelReply" style="margin-left:8px">取消</button>
           </div>
           <form id="sendForm">
+            <button id="emojiBtn" type="button" style="margin-right:6px">😊</button>
             <input id="msgInput" placeholder="输入消息并回车发送" />
             <button type="submit">发送</button>
+            <div id="emojiPanel" style="display:none; position:absolute; right:20px; bottom:60px; width:320px; max-height:320px; overflow:auto; background:#fff; border:1px solid #ddd; padding:8px; box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <strong>我的表情包</strong>
+                <a href="/emoji.html">管理</a>
+              </div>
+              <div id="emojiList" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+            </div>
           </form>
         </section>
       </main>
