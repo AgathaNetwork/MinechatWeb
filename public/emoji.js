@@ -8,7 +8,9 @@ createApp({
     const selfFaceUrl = ref('');
     const name = ref('');
     const packs = ref([]);
-    const fileInput = ref(null);
+
+    const selectedFile = ref(null);
+    const uploadFiles = ref([]);
 
     function tokenValue(){
       const t = (token.value || '').trim();
@@ -104,14 +106,42 @@ createApp({
       }catch(e){ console.error(e); }
     }
 
+    function onUploadChange(file, fileList){
+      try{
+        selectedFile.value = (file && file.raw) ? file.raw : null;
+        uploadFiles.value = Array.isArray(fileList) ? fileList.slice(-1) : [];
+      }catch(e){
+        selectedFile.value = null;
+        uploadFiles.value = [];
+      }
+    }
+
+    function onUploadRemove(){
+      selectedFile.value = null;
+      uploadFiles.value = [];
+    }
+
+    function onUploadExceed(files){
+      // keep only the latest
+      try{
+        const last = Array.isArray(files) ? files[files.length - 1] : null;
+        selectedFile.value = last || null;
+        uploadFiles.value = [];
+      }catch(e){}
+    }
+
     async function upload(){
-      const fileEl = fileInput.value; if(!fileEl || !fileEl.files || !fileEl.files[0]) return alert('请选择文件');
-      const f = fileEl.files[0]; const fd = new FormData(); fd.append('file', f); if(name.value) fd.append('name', name.value);
+      const f = selectedFile.value;
+      if(!f) return ElementPlus.ElMessage.warning('请选择文件');
+      const fd = new FormData();
+      fd.append('file', f);
+      if(name.value) fd.append('name', name.value);
       try{
         const r = await safeFetch(`${apiBase.value}/emoji`, { method:'POST', body: fd });
         if(!r.ok) throw new Error('upload failed');
         name.value='';
-        fileEl.value='';
+        selectedFile.value = null;
+        uploadFiles.value = [];
         await loadPacks();
       }catch(e){ console.error(e); alert('上传失败'); }
     }
@@ -134,6 +164,19 @@ createApp({
     }
 
     onMounted(async ()=>{ await fetchConfig(); await resolveSelfFace(); await loadPacks(); });
-    return { name, packs, fileInput, upload, del, logout, onNav, selfFaceUrl };
+    return {
+      name,
+      packs,
+      upload,
+      del,
+      logout,
+      onNav,
+      selfFaceUrl,
+      selectedFile,
+      uploadFiles,
+      onUploadChange,
+      onUploadRemove,
+      onUploadExceed,
+    };
   }
 }).use(ElementPlus).mount('#app');

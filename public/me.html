@@ -50,8 +50,8 @@
             <el-divider></el-divider>
 
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-              <el-button type="primary" :loading="updating" @click="updateFace">更新皮肤头像</el-button>
-              <el-button v-if="selfFaceUrl" type="default" @click="reloadSelf">刷新信息</el-button>
+              <el-button type="primary" :loading="updating" :disabled="!isLoggedIn || updating || loading" @click="updateFace">更新皮肤头像</el-button>
+              <el-button v-if="selfFaceUrl" type="default" :loading="loading" :disabled="!isLoggedIn || loading || updating" @click="reloadSelf">刷新信息</el-button>
             </div>
 
             <div style="margin-top:12px" v-if="lastResult">

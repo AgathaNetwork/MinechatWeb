@@ -26,15 +26,33 @@
         </el-header>
         <el-main style="padding:12px">
           <el-form @submit.native.prevent="upload">
-            <el-form-item>
-              <el-input v-model="name" placeholder="名称（可选）"></el-input>
-            </el-form-item>
-            <el-form-item>
-              <input type="file" ref="fileInput" accept="image/*" />
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" @click="upload">上传</el-button>
-            </el-form-item>
+            <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+              <div style="flex:1;min-width:220px">
+                <el-form-item style="margin-bottom:0">
+                  <el-input v-model="name" placeholder="名称（可选）"></el-input>
+                </el-form-item>
+              </div>
+              <div style="width:280px;max-width:100%">
+                <el-form-item style="margin-bottom:0">
+                  <el-upload
+                    :auto-upload="false"
+                    :limit="1"
+                    accept="image/*"
+                    :file-list="uploadFiles"
+                    @change="onUploadChange"
+                    @remove="onUploadRemove"
+                    @exceed="onUploadExceed"
+                  >
+                    <el-button type="default">选择文件</el-button>
+                  </el-upload>
+                </el-form-item>
+              </div>
+              <div>
+                <el-form-item style="margin-bottom:0">
+                  <el-button type="primary" :disabled="!selectedFile" @click="upload">上传</el-button>
+                </el-form-item>
+              </div>
+            </div>
           </el-form>
 
           <el-divider></el-divider>

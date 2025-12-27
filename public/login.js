@@ -8,6 +8,7 @@ createApp({
     const tokenInput = ref(localStorage.getItem('token') || '');
     const checking = ref(false);
     const hasSession = ref(false);
+    const loggingIn = ref(false);
 
     const authOk = ref(null); // null | true | false
     const authUserId = ref('');
@@ -122,6 +123,8 @@ createApp({
     }
 
     function openLoginPopup() {
+      if (loggingIn.value) return;
+      loggingIn.value = true;
       // No popup: redirect current page to start OAuth.
       // Prefer same-origin proxy (/api) to avoid CORS issues.
       const base = apiBase.value || apiAuthBase.value;
@@ -150,6 +153,7 @@ createApp({
     return {
       tokenInput,
       checking,
+      loggingIn,
       hasSession,
       openLoginPopup,
       applyToken,

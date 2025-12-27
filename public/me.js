@@ -157,6 +157,7 @@ createApp({
     }
 
     async function reloadSelf() {
+      if (loading.value || updating.value) return;
       loading.value = true;
       lastError.value = '';
       try {
@@ -171,6 +172,7 @@ createApp({
     }
 
     async function updateFace() {
+      if (updating.value || loading.value) return;
       updating.value = true;
       lastResult.value = '';
       lastError.value = '';

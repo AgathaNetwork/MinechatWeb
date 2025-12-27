@@ -46,6 +46,9 @@ createApp({
     const isGlobalChat = computed(() => currentChatId.value === 'global');
     const isLoggedIn = computed(() => !!token.value || !!sessionOk.value);
 
+    const socket = ref(null);
+    const joinedChatId = ref(null);
+
     function tokenValue() {
       const t = (token.value || '').trim();
       return t ? t : null;
@@ -88,6 +91,290 @@ createApp({
       }
 
       return res;
+    }
+
+    function normalizeChatIdFromMessage(m) {
+      if (!m || typeof m !== 'object') return null;
+      return m.chatId || m.chat_id || m.chat || null;
+    }
+
+    function isScrolledNearBottom(el) {
+      try {
+        if (!el) return true;
+        const threshold = 120;
+        return el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+      } catch (e) {
+        return true;
+      }
+    }
+
+    function upsertIncomingMessage(msg) {
+      if (!msg || typeof msg !== 'object') return;
+
+      // normalize fields so UI can render
+      normalizeMessage(msg, currentChatId.value === 'global');
+
+      const id = msg.id;
+      if (!id) return;
+
+      // If we already have the message, merge/update in place
+      if (msgById[id]) {
+        const prev = msgById[id];
+        Object.assign(prev, msg);
+        return;
+      }
+
+      msgById[id] = msg;
+      messages.value = messages.value.concat([msg]);
+    }
+
+    function contentSignature(m) {
+      try {
+        if (!m) return '';
+        if (m.type === 'text') {
+          const t = (m.content && (m.content.text !== undefined ? m.content.text : m.content)) || '';
+          return 'text:' + String(t);
+        }
+        if (m.type === 'emoji') {
+          const pid = m.content && (m.content.packId || m.content.pack_id) || '';
+          const url = m.content && m.content.url || '';
+          return 'emoji:' + String(pid) + ':' + String(url);
+        }
+        if (m.type === 'file') {
+          const fn = m.content && m.content.filename || '';
+          const mm = m.content && (m.content.mimetype || m.content.type) || '';
+          return 'file:' + String(fn) + ':' + String(mm);
+        }
+        return String(m.type || '') + ':' + messageTextPreview(m);
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function findOptimisticForAck(serverMsg) {
+      try {
+        if (!serverMsg || typeof serverMsg !== 'object') return null;
+        normalizeMessage(serverMsg, currentChatId.value === 'global');
+        if (!selfUserId.value) return null;
+        if (!serverMsg.from_user) return null;
+        if (String(serverMsg.from_user) !== String(selfUserId.value)) return null;
+
+        const sig = contentSignature(serverMsg);
+        const now = parseMessageTime(serverMsg) ? parseMessageTime(serverMsg).getTime() : Date.now();
+
+        const arr = messages.value || [];
+        for (let i = arr.length - 1; i >= 0; i--) {
+          const m = arr[i];
+          if (!m || !m.id) continue;
+          if (m.__status !== 'sending') continue;
+          if (m.__own !== true) continue;
+          if (m.type !== serverMsg.type) continue;
+
+          const ms = parseMessageTime(m) ? parseMessageTime(m).getTime() : Date.now();
+          if (Math.abs(now - ms) > 60 * 1000) continue;
+          if (contentSignature(m) !== sig) continue;
+
+          return m;
+        }
+        return null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function ackOptimisticMessage(tempId, serverMsg, isGlobal) {
+      try {
+        const optimistic = msgById[tempId];
+        if (!optimistic) return;
+        if (!serverMsg || typeof serverMsg !== 'object') {
+          optimistic.__status = 'sent';
+          return;
+        }
+        normalizeMessage(serverMsg, !!isGlobal);
+        const serverId = serverMsg.id;
+        if (!serverId) {
+          optimistic.__status = 'sent';
+          return;
+        }
+
+        // If the server message already exists (socket came first), drop optimistic one.
+        if (msgById[serverId]) {
+          try {
+            Object.assign(msgById[serverId], serverMsg);
+            msgById[serverId].__status = 'sent';
+          } catch (e) {}
+          if (tempId !== serverId) {
+            removeMessageById(tempId);
+          }
+          return;
+        }
+
+        // Move optimistic mapping from tempId -> serverId to prevent duplicates.
+        delete msgById[tempId];
+
+        optimistic.__status = 'sent';
+        optimistic.id = serverId;
+        optimistic.createdAt = serverMsg.created_at || serverMsg.createdAt || optimistic.createdAt;
+        if (serverMsg.type) optimistic.type = serverMsg.type;
+        if (serverMsg.from_user) optimistic.from_user = serverMsg.from_user;
+        if (serverMsg.replied_to !== undefined) optimistic.replied_to = serverMsg.replied_to;
+        if (serverMsg.content !== undefined) {
+          if (optimistic.type === 'file' && optimistic.content && optimistic.content.__localUrl) {
+            const localUrl = optimistic.content.__localUrl;
+            optimistic.content = Object.assign({}, serverMsg.content);
+            optimistic.content.__localUrl = localUrl;
+          } else {
+            optimistic.content = serverMsg.content;
+          }
+        }
+
+        msgById[serverId] = optimistic;
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    function removeMessageById(messageId) {
+      if (!messageId) return;
+      if (msgById[messageId]) delete msgById[messageId];
+      messages.value = (messages.value || []).filter((m) => m && m.id !== messageId);
+    }
+
+    async function ensureUserCachesForMessages(msgs, isGlobal) {
+      try {
+        const ids = new Set();
+        (msgs || []).forEach((m) => {
+          if (!m) return;
+          normalizeMessage(m, isGlobal);
+          if (m.from_user) ids.add(m.from_user);
+          if (!isGlobal && m.replied_to) {
+            const ref = typeof m.replied_to === 'object' ? m.replied_to : msgById[m.replied_to];
+            if (ref && ref.from_user) ids.add(ref.from_user);
+          }
+        });
+        await fetchMissingUserNames(ids);
+      } catch (e) {}
+    }
+
+    function connectSocket() {
+      try {
+        if (socket.value && socket.value.connected) return;
+        if (typeof window === 'undefined' || !window.io) return;
+
+        // Always connect to current origin and go through /api proxy for socket.io path.
+        const opts = {
+          path: '/api/socket.io',
+          transports: ['websocket', 'polling'],
+          withCredentials: true,
+        };
+
+        const t = tokenValue();
+        if (t) opts.auth = { token: t };
+
+        const s = window.io(window.location.origin, opts);
+        socket.value = s;
+
+        s.on('connect', () => {
+          // Join current chat room if already selected
+          try {
+            if (currentChatId.value && currentChatId.value !== joinedChatId.value) {
+              s.emit('join', currentChatId.value);
+              joinedChatId.value = currentChatId.value;
+            }
+          } catch (e) {}
+        });
+
+        s.on('connect_error', (err) => {
+          const msg = (err && err.message) ? String(err.message) : String(err || '');
+          // If token is invalid, drop it and retry relying on session cookie.
+          if (/invalid token/i.test(msg)) {
+            try { clearBadToken(); } catch (e) {}
+            try { s.disconnect(); } catch (e) {}
+            try {
+              const s2 = window.io(window.location.origin, {
+                path: '/api/socket.io',
+                transports: ['websocket', 'polling'],
+                withCredentials: true,
+              });
+              socket.value = s2;
+            } catch (e) {}
+          }
+        });
+
+        s.on('message.created', async (msg) => {
+          try {
+            const chatId = normalizeChatIdFromMessage(msg);
+            const current = currentChatId.value;
+            if (!current) return;
+            if (chatId && String(chatId) !== String(current)) return;
+
+            // If this is an echo of our optimistic send, treat it as ACK and merge.
+            const candidate = findOptimisticForAck(msg);
+            if (candidate && candidate.id) {
+              ackOptimisticMessage(candidate.id, msg, current === 'global');
+              await ensureUserCachesForMessages([msg], current === 'global');
+              return;
+            }
+
+            const stickToBottom = isScrolledNearBottom(messagesEl.value);
+            upsertIncomingMessage(msg);
+            await ensureUserCachesForMessages([msg], current === 'global');
+            await nextTick();
+            if (stickToBottom && messagesEl.value) {
+              messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
+            }
+          } catch (e) {}
+        });
+
+        s.on('message.deleted', (payload) => {
+          try {
+            const id = payload && (payload.id || payload.messageId);
+            const chatId = payload && (payload.chatId || payload.chat_id);
+            const current = currentChatId.value;
+            if (chatId && current && String(chatId) !== String(current)) return;
+            if (id) removeMessageById(id);
+          } catch (e) {}
+        });
+
+        s.on('message.missed', async (payload) => {
+          try {
+            const chatId = payload && payload.chatId;
+            const msgs = payload && payload.messages;
+            if (!chatId || !Array.isArray(msgs)) return;
+            const current = currentChatId.value;
+            if (!current || String(chatId) !== String(current)) return;
+
+            const stickToBottom = isScrolledNearBottom(messagesEl.value);
+            for (const m of msgs) {
+              upsertIncomingMessage(m);
+            }
+            await ensureUserCachesForMessages(msgs, current === 'global');
+            await nextTick();
+            if (stickToBottom && messagesEl.value) {
+              messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
+            }
+          } catch (e) {}
+        });
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    function leaveSocketRoom(chatId) {
+      try {
+        if (!socket.value) return;
+        if (!chatId) return;
+        socket.value.emit('leave', chatId);
+      } catch (e) {}
+    }
+
+    function joinSocketRoom(chatId) {
+      try {
+        if (!socket.value) return;
+        if (!chatId) return;
+        socket.value.emit('join', chatId);
+        joinedChatId.value = chatId;
+      } catch (e) {}
     }
 
     function decodeJwtPayload(jwt) {
@@ -279,6 +566,11 @@ createApp({
       localStorage.removeItem('token');
       sessionOk.value = false;
       try {
+        if (socket.value) socket.value.disconnect();
+      } catch (e) {}
+      socket.value = null;
+      joinedChatId.value = null;
+      try {
         const base = apiAuthBase.value || apiBase.value;
         fetch(`${base}/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
       } catch (e) {}
@@ -415,10 +707,19 @@ createApp({
         const el = document.querySelector(`.msg-wrapper[data-id="${messageId}"]`);
         if (!el) return;
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        const prev = el.style.background;
-        el.style.background = '#ffffcc';
+        const prevBg = el.style.background;
+        const prevShadow = el.style.boxShadow;
+        const prevRadius = el.style.borderRadius;
+
+        // Light blue highlight with extra breathing room around the message.
+        el.style.borderRadius = '10px';
+        el.style.background = '#eef6ff';
+        // spread shadow creates "padding" visually without shifting layout
+        el.style.boxShadow = '0 0 0 6px rgba(238, 246, 255, 0.95)';
         setTimeout(() => {
-          el.style.background = prev;
+          el.style.background = prevBg;
+          el.style.boxShadow = prevShadow;
+          el.style.borderRadius = prevRadius;
         }, 800);
       } catch (e) {}
     }
@@ -489,6 +790,11 @@ createApp({
     }
 
     async function openChat(id) {
+      // leave previous room
+      try {
+        if (joinedChatId.value && joinedChatId.value !== id) leaveSocketRoom(joinedChatId.value);
+      } catch (e) {}
+
       currentChatId.value = id;
       emojiPanelVisible.value = false;
       currentChatFaceUrl.value = '';
@@ -575,6 +881,12 @@ createApp({
 
         await nextTick();
         if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
+
+        // join room after initial load
+        try {
+          connectSocket();
+          joinSocketRoom(id);
+        } catch (e) {}
       } catch (e) {
         console.error(e);
         ElementPlus.ElMessage.error('无法打开会话');
@@ -674,12 +986,7 @@ createApp({
           });
           if (!res.ok) throw new Error('发送失败');
           const serverMsg = await res.json().catch(() => null);
-          optimisticMsg.__status = 'sent';
-          if (serverMsg && typeof serverMsg === 'object') {
-            normalizeMessage(serverMsg, true);
-            optimisticMsg.id = serverMsg.id || optimisticMsg.id;
-            optimisticMsg.createdAt = serverMsg.created_at || serverMsg.createdAt || optimisticMsg.createdAt;
-          }
+          ackOptimisticMessage(tempId, serverMsg, true);
         } else {
           const payload = { type: 'text', content: text };
           if (replyTarget.value) payload.repliedTo = replyTarget.value.id || replyTarget.value;
@@ -690,12 +997,7 @@ createApp({
           });
           if (!res.ok) throw new Error('发送失败');
           const serverMsg = await res.json().catch(() => null);
-          optimisticMsg.__status = 'sent';
-          if (serverMsg && typeof serverMsg === 'object') {
-            normalizeMessage(serverMsg, false);
-            optimisticMsg.id = serverMsg.id || optimisticMsg.id;
-            optimisticMsg.createdAt = serverMsg.created_at || serverMsg.createdAt || optimisticMsg.createdAt;
-          }
+          ackOptimisticMessage(tempId, serverMsg, false);
           clearReplyTarget();
         }
       } catch (e) {
@@ -766,12 +1068,7 @@ createApp({
         });
         if (!res.ok) throw new Error('发送失败');
         const serverMsg = await res.json().catch(() => null);
-        optimisticMsg.__status = 'sent';
-        if (serverMsg && typeof serverMsg === 'object') {
-          normalizeMessage(serverMsg, false);
-          optimisticMsg.id = serverMsg.id || optimisticMsg.id;
-          optimisticMsg.createdAt = serverMsg.created_at || serverMsg.createdAt || optimisticMsg.createdAt;
-        }
+        ackOptimisticMessage(tempId, serverMsg, false);
       } catch (e) {
         console.error(e);
         optimisticMsg.__status = 'failed';
@@ -848,17 +1145,7 @@ createApp({
         });
         if (!res.ok) throw new Error('发送失败');
         const serverMsg = await res.json().catch(() => null);
-        optimisticMsg.__status = 'sent';
-        if (serverMsg && typeof serverMsg === 'object') {
-          normalizeMessage(serverMsg, false);
-          optimisticMsg.id = serverMsg.id || optimisticMsg.id;
-          optimisticMsg.createdAt = serverMsg.created_at || serverMsg.createdAt || optimisticMsg.createdAt;
-          // server content contains url/thumbnailUrl/mimetype
-          if (serverMsg.content) {
-            optimisticMsg.content = Object.assign({}, serverMsg.content);
-            if (localUrl) optimisticMsg.content.__localUrl = localUrl;
-          }
-        }
+        ackOptimisticMessage(tempId, serverMsg, false);
         clearReplyTarget();
       } catch (e) {
         console.error(e);
@@ -894,6 +1181,7 @@ createApp({
       await loadUsersIndex();
       await resolveSelfProfile();
       if (isLoggedIn.value) {
+        connectSocket();
         await loadChats();
       }
 
