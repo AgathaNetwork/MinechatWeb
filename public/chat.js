@@ -9,6 +9,7 @@ createApp({
     const sessionOk = ref(false);
 
     const chats = ref([]);
+    const chatUnreadMap = reactive({});
     const currentChatId = ref(null);
     const currentChatTitle = ref('');
     const currentChatFaceUrl = ref('');
@@ -306,6 +307,19 @@ createApp({
           try {
             const chatId = normalizeChatIdFromMessage(msg);
             const current = currentChatId.value;
+            
+            // 更新会话列表的最新消息和未读状态
+            if (chatId && chatId !== 'global') {
+              const chat = (chats.value || []).find(c => c && String(c.id) === String(chatId));
+              if (chat) {
+                chat.lastMessage = msg;
+                // 如果不是当前打开的会话，标记为未读
+                if (!current || String(chatId) !== String(current)) {
+                  chatUnreadMap[chatId] = true;
+                }
+              }
+            }
+            
             if (!current) return;
             if (chatId && String(chatId) !== String(current)) return;
 
@@ -402,6 +416,20 @@ createApp({
       const fromUser = m.from_user || m.fromUser || m.from;
       if (!fromUser) return '';
       return getCachedFaceUrl(fromUser);
+    }
+
+    function formatLastMessage(chat) {
+      if (!chat || !chat.lastMessage) return '';
+      const msg = chat.lastMessage;
+      const text = messageTextPreview(msg);
+      if (text) return text.length > 20 ? text.substring(0, 20) + '...' : text;
+      if (msg.type === 'emoji') return '[表情]';
+      if (msg.type === 'file') return '[文件]';
+      return '';
+    }
+
+    function hasUnread(chatId) {
+      return !!chatUnreadMap[chatId];
     }
 
     async function loadUsersIndex() {
@@ -800,6 +828,11 @@ createApp({
     async function openChat(id) {
       // 立即显示加载动画
       chatLoading.value = true;
+      
+      // 清除当前会话的未读标记
+      if (id && id !== 'global') {
+        chatUnreadMap[id] = false;
+      }
       
       // 等待下一个tick，确保UI更新
       await nextTick();
@@ -1212,6 +1245,7 @@ createApp({
     return {
       // state
       chats,
+      chatUnreadMap,
       currentChatId,
       currentChatTitle,
       currentChatFaceUrl,
@@ -1236,6 +1270,8 @@ createApp({
       messageAuthorName,
       messageAuthorFaceUrl,
       messageTextPreview,
+      formatLastMessage,
+      hasUnread,
       repliedRefMessage,
       scrollToMessage,
       isOwnMessage,
