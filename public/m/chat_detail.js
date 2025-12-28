@@ -42,28 +42,44 @@ const app = createApp({
       apiBase.value = conf.apiProxyBase || conf.apiBase || '';
     }
 
+    function tokenValue() {
+      const t = (token.value || '').trim();
+      return t ? t : null;
+    }
+
+    function clearBadToken() {
+      token.value = null;
+      try {
+        localStorage.removeItem('token');
+      } catch (e) {}
+    }
+
     function authHeaders(extra) {
       const h = Object.assign({}, extra || {});
-      const t = token.value;
+      const t = tokenValue();
       if (t) h['Authorization'] = `Bearer ${t}`;
       return h;
     }
 
-    async function safeFetch(url, options) {
+    async function safeFetch(url, options, allowRetry) {
       const opt = Object.assign({ credentials: 'include' }, options || {});
       opt.headers = authHeaders(opt.headers);
 
       const res = await fetch(url, opt);
-      if (res.status === 401) {
+      const canRetry = allowRetry !== false;
+      if (canRetry && res.status === 401) {
         let txt = '';
         try {
           txt = await res.clone().text();
         } catch (e) {}
         if (/invalid token/i.test(txt)) {
-          token.value = null;
-          try {
-            localStorage.removeItem('token');
-          } catch (e) {}
+          clearBadToken();
+          const opt2 = Object.assign({}, opt);
+          const h2 = Object.assign({}, opt2.headers || {});
+          delete h2.Authorization;
+          delete h2.authorization;
+          opt2.headers = h2;
+          return fetch(url, opt2);
         }
       }
       return res;
@@ -791,13 +807,17 @@ const app = createApp({
 
     async function loadEmojiPacks() {
       try {
-        const res = await safeFetch(`${apiBase.value}/emoji-packs`);
+        const res = await safeFetch(`${apiBase.value}/emoji`);
         if (res.ok) {
           const packs = await res.json();
-          emojiPacks.value = packs.map(p => ({
+          emojiPacks.value = (Array.isArray(packs) ? packs : []).map(p => ({
             id: p.id,
-            url: p.url || `${apiBase.value}/emoji-packs/${p.id}/download`,
-            name: p.name,
+            url:
+              p.url ||
+              p.downloadUrl ||
+              p.download_url ||
+              `${apiBase.value}/emoji/${encodeURIComponent(p.id)}/download`,
+            name: p.name || (p.meta && p.meta.filename) || p.filename || '',
           }));
         }
       } catch (e) {}

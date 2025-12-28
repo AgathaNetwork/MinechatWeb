@@ -12,34 +12,64 @@ createApp({
 
     async function fetchConfig() {
       const conf = await fetch('/config').then((r) => r.json());
-      apiBase.value = conf.apiBase || '';
+      apiBase.value = conf.apiProxyBase || conf.apiBase || '';
+    }
+
+    function tokenValue() {
+      const t = (token.value || '').trim();
+      return t ? t : null;
+    }
+
+    function clearBadToken() {
+      token.value = null;
+      try {
+        localStorage.removeItem('token');
+      } catch (e) {}
     }
 
     function authHeaders() {
       const h = {};
-      const t = token.value;
+      const t = tokenValue();
       if (t) h['Authorization'] = `Bearer ${t}`;
       return h;
     }
 
-    async function safeFetch(url, options) {
-      const opt = Object.assign({}, options || {});
-      opt.headers = authHeaders();
-      // 只在没有 token 时才使用 credentials（依赖 cookie）
-      if (!token.value) {
-        opt.credentials = 'include';
+    async function safeFetch(url, options, allowRetry) {
+      const opt = Object.assign({ credentials: 'include' }, options || {});
+      opt.headers = Object.assign({}, opt.headers || {}, authHeaders());
+
+      const res = await fetch(url, opt);
+      const canRetry = allowRetry !== false;
+      if (canRetry && res.status === 401) {
+        let txt = '';
+        try {
+          txt = await res.clone().text();
+        } catch (e) {}
+        if (/invalid token/i.test(txt)) {
+          clearBadToken();
+          const opt2 = Object.assign({}, opt);
+          const h2 = Object.assign({}, opt2.headers || {});
+          delete h2.Authorization;
+          delete h2.authorization;
+          opt2.headers = h2;
+          return fetch(url, opt2);
+        }
       }
-      return fetch(url, opt);
+      return res;
     }
 
     async function loadPacks() {
       try {
-        const res = await safeFetch(`${apiBase.value}/emoji-packs`);
+        const res = await safeFetch(`${apiBase.value}/emoji`);
         if (!res.ok) return;
         const data = await res.json();
-        packs.value = data.map(p => ({
+        packs.value = (Array.isArray(data) ? data : []).map(p => ({
           ...p,
-          url: p.url || `${apiBase.value}/emoji-packs/${p.id}/download`,
+          url:
+            p.url ||
+            p.downloadUrl ||
+            p.download_url ||
+            `${apiBase.value}/emoji/${encodeURIComponent(p.id)}/download`,
         }));
       } catch (e) {}
     }
@@ -63,19 +93,7 @@ createApp({
         form.append('file', selectedFile.value);
         if (name.value) form.append('name', name.value);
 
-        const headers = authHeaders();
-        delete headers['Content-Type'];
-
-        const fetchOpts = {
-          method: 'POST',
-          headers,
-          body: form,
-        };
-        // 只在没有 token 时才使用 credentials（依赖 cookie）
-        if (!token.value) {
-          fetchOpts.credentials = 'include';
-        }
-        const res = await fetch(`${apiBase.value}/emoji-packs`, fetchOpts);
+        const res = await safeFetch(`${apiBase.value}/emoji`, { method: 'POST', body: form });
 
         if (!res.ok) throw new Error('上传失败');
 
@@ -95,7 +113,7 @@ createApp({
           type: 'warning',
         });
 
-        const res = await safeFetch(`${apiBase.value}/emoji-packs/${encodeURIComponent(id)}`, {
+        const res = await safeFetch(`${apiBase.value}/emoji/${encodeURIComponent(id)}`, {
           method: 'DELETE',
         });
 
