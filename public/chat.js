@@ -42,6 +42,7 @@ createApp({
     const fileInputEl = ref(null);
 
     const messagesEl = ref(null);
+    const chatLoading = ref(false);
 
     const isGlobalChat = computed(() => currentChatId.value === 'global');
     const isLoggedIn = computed(() => !!token.value || !!sessionOk.value);
@@ -790,6 +791,12 @@ createApp({
     }
 
     async function openChat(id) {
+      // 立即显示加载动画
+      chatLoading.value = true;
+      
+      // 等待下一个tick，确保UI更新
+      await nextTick();
+      
       // leave previous room
       try {
         if (joinedChatId.value && joinedChatId.value !== id) leaveSocketRoom(joinedChatId.value);
@@ -890,6 +897,9 @@ createApp({
       } catch (e) {
         console.error(e);
         ElementPlus.ElMessage.error('无法打开会话');
+      } finally {
+        // 加载完成，隐藏动画
+        chatLoading.value = false;
       }
     }
 
@@ -1198,6 +1208,7 @@ createApp({
       currentChatId,
       currentChatTitle,
       currentChatFaceUrl,
+      chatLoading,
       selfFaceUrl,
       messages,
       msgInput,
