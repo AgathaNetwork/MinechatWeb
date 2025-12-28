@@ -774,7 +774,7 @@ const app = createApp({
       let y = ev.clientY;
       // keep menu within viewport
       const menuWidth = 140;
-      const menuHeight = 48;
+      const menuHeight = 96;
       if (x + menuWidth > window.innerWidth) x = window.innerWidth - menuWidth - 10;
       if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 10;
       if (x < 10) x = 10;
@@ -801,6 +801,49 @@ const app = createApp({
       if (!ctxMenuMsg.value) return;
       setReplyTarget(ctxMenuMsg.value);
       hideCtxMenu();
+    }
+
+    function canCollectEmoji(m) {
+      try {
+        if (!m || typeof m !== 'object') return false;
+        if (!m.id) return false;
+        const t = String(m.type || '').toLowerCase();
+        return t === 'emoji' || t === 'sticker';
+      } catch (e) {
+        return false;
+      }
+    }
+
+    async function ctxCollectEmoji() {
+      const msg = ctxMenuMsg.value;
+      if (!canCollectEmoji(msg)) return;
+      hideCtxMenu();
+      try {
+        const res = await safeFetch(`${apiBase.value}/emoji/collect/${encodeURIComponent(msg.id)}`, {
+          method: 'POST',
+        });
+        if (res.ok) {
+          ElementPlus.ElMessage.success('已添加到表情包');
+          if (emojiPanelVisible.value) {
+            try {
+              const r = await safeFetch(`${apiBase.value}/emoji`);
+              if (r.ok) emojiPacks.value = await r.json();
+            } catch (e2) {}
+          }
+          return;
+        }
+
+        let err = '';
+        try {
+          const data = await res.json().catch(() => null);
+          err = data && (data.error || data.message) ? String(data.error || data.message) : '';
+        } catch (e) {}
+        if (!err) err = `操作失败 (${res.status})`;
+        if (res.status === 400) ElementPlus.ElMessage.warning(err);
+        else ElementPlus.ElMessage.error(err);
+      } catch (e) {
+        ElementPlus.ElMessage.error('添加失败');
+      }
     }
 
     function clearReplyTarget() {
@@ -1282,6 +1325,7 @@ const app = createApp({
       ctxMenuVisible,
       ctxMenuX,
       ctxMenuY,
+      ctxMenuMsg,
 
       // helpers
       messageAuthorName,
@@ -1305,6 +1349,8 @@ const app = createApp({
       openGlobal,
       onMessageContextMenu,
       ctxReply,
+      canCollectEmoji,
+      ctxCollectEmoji,
       setReplyTarget,
       clearReplyTarget,
       onMessagesScroll,

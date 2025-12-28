@@ -16,6 +16,7 @@ const app = createApp({
 
     const fileInputEl = ref(null);
     const inputAreaEl = ref(null);
+
     const msgInput = ref('');
     const messagesEl = ref(null);
     const chatLoading = ref(false);
@@ -491,7 +492,7 @@ const app = createApp({
       
       // 确保菜单不会超出屏幕
       const menuWidth = 140;
-      const menuHeight = 50;
+      const menuHeight = 100;
       
       if (x + menuWidth > window.innerWidth) {
         x = window.innerWidth - menuWidth - 10;
@@ -520,6 +521,47 @@ const app = createApp({
         setReplyTarget(ctxMenuMsg.value);
       }
       hideContextMenu();
+    }
+
+    function canCollectEmoji(m) {
+      try {
+        if (!m || typeof m !== 'object') return false;
+        if (!m.id) return false;
+        const t = String(m.type || '').toLowerCase();
+        return t === 'emoji' || t === 'sticker';
+      } catch (e) {
+        return false;
+      }
+    }
+
+    async function ctxCollectEmoji() {
+      const msg = ctxMenuMsg.value;
+      if (!canCollectEmoji(msg)) return;
+      hideContextMenu();
+
+      try {
+        const res = await safeFetch(`${apiBase.value}/emoji/collect/${encodeURIComponent(msg.id)}`, {
+          method: 'POST',
+        });
+        if (res.ok) {
+          try { ElementPlus.ElMessage.success('已添加到表情包'); } catch (e) {}
+          try { await loadEmojiPacks(); } catch (e2) {}
+          return;
+        }
+
+        let err = '';
+        try {
+          const data = await res.json().catch(() => null);
+          err = data && (data.error || data.message) ? String(data.error || data.message) : '';
+        } catch (e) {}
+        if (!err) err = `操作失败 (${res.status})`;
+        try {
+          if (res.status === 400) ElementPlus.ElMessage.warning(err);
+          else ElementPlus.ElMessage.error(err);
+        } catch (e2) {}
+      } catch (e) {
+        try { ElementPlus.ElMessage.error('添加失败'); } catch (e2) {}
+      }
     }
 
     function setReplyTarget(m) {
@@ -903,6 +945,9 @@ const app = createApp({
       ctxMenuVisible,
       ctxMenuX,
       ctxMenuY,
+      ctxMenuMsg,
+      canCollectEmoji,
+      ctxCollectEmoji,
       messageAuthorName,
       messageAuthorFaceUrl,
       messageTextPreview,

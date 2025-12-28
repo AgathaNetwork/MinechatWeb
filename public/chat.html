@@ -119,6 +119,7 @@
             <div v-if="ctxMenuVisible" @click.stop style="position:fixed;z-index:9999;background:#fff;border:1px solid #dcdfe6;border-radius:6px;padding:6px;min-width:120px"
                  :style="{ left: ctxMenuX + 'px', top: ctxMenuY + 'px' }">
               <div style="cursor:pointer;padding:6px 10px" @click="ctxReply">回复</div>
+              <div v-if="canCollectEmoji(ctxMenuMsg)" style="cursor:pointer;padding:6px 10px" @click="ctxCollectEmoji">添加到表情包</div>
             </div>
 
             <div v-if="replyTarget" style="margin-top:10px;padding:8px;border-left:3px solid #ccc;background:#f7f7f7;border-radius:6px">
