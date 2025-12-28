@@ -111,8 +111,16 @@ createApp({
       }
     }
 
+    function isMobileDevice() {
+      return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
+    }
+
     function gotoChat() {
-      window.location.href = '/chat.html';
+      if (isMobileDevice()) {
+        window.location.href = '/m/chats.html';
+      } else {
+        window.location.href = '/chat.html';
+      }
     }
 
     async function logoutSession() {

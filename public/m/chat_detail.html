@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>会话详情 - Minechat</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <style>
+      [v-cloak]{display:none}
+      html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+      body{margin:0;padding:0}
+      input,textarea,.el-input__inner,.el-textarea__inner{font-size:16px !important}
+      .top-bar{position:fixed;top:0;left:0;right:0;height:50px;background:#fff;border-bottom:1px solid #e6e6e6;display:flex;align-items:center;padding:0 12px;z-index:100;gap:8px}
+      .messages-area{position:fixed;top:50px;left:0;right:0;bottom:var(--input-area-height, 160px);overflow:auto;padding:12px;background:#f5f5f5;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y}
+      .input-area{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #ddd;padding:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:6px;touch-action:manipulation}
+      .msg-row{width:100%;margin-bottom:10px;display:flex;gap:8px;align-items:flex-start}
+      .msg-row.own{justify-content:flex-end}
+      .msg-row.other{justify-content:flex-start}
+      .msg-content-wrapper{display:flex;flex-direction:column;max-width:75%;min-width:60px;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+      .msg-row.own .msg-content-wrapper{align-items:flex-end}
+      .msg-row.other .msg-content-wrapper{align-items:flex-start}
+      .msg-bubble{padding:8px 10px;border-radius:12px;word-break:break-word;width:fit-content;display:inline-block;border:1px solid #eee;color:#222;max-width:100%}
+      .msg-time{font-size:11px;color:#999;text-align:center;margin-top:4px;opacity:0;transition:opacity 0.2s}
+      .msg-content-wrapper.show-time .msg-time{opacity:1}
+      .ctx-menu{position:fixed;z-index:9999;background:#fff;border:1px solid #dcdfe6;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,0.1);min-width:140px;overflow:hidden}
+      .ctx-menu-item{padding:12px 16px;cursor:pointer;border-bottom:1px solid #f0f0f0;font-size:15px}
+      .ctx-menu-item:last-child{border-bottom:none}
+      .ctx-menu-item:active{background:#f5f5f5}
+      .loading-spinner{width:40px;height:40px;border:4px solid #f3f3f3;border-top:4px solid #409eff;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto}
+      @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+    </style>
+  </head>
+  <body>
+    <div id="app" v-cloak>
+      <div class="top-bar">
+        <el-button @click="goBack" size="small" style="padding:5px 10px">←</el-button>
+        <el-avatar v-if="currentChatFaceUrl" shape="square" :src="currentChatFaceUrl" :size="32"></el-avatar>
+        <h3 style="margin:0;flex:1">{{ currentChatTitle }}</h3>
+      </div>
+
+      <div class="messages-area" ref="messagesEl" @scroll="onMessagesScroll">
+        <div v-if="chatLoading" style="display:flex;align-items:center;justify-content:center;padding:40px">
+          <div style="text-align:center">
+            <div class="loading-spinner"></div>
+            <div style="margin-top:12px;color:#666;font-size:14px">加载中...</div>
+          </div>
+        </div>
+
+        <div v-for="m in messages" :key="m.id" class="msg-wrapper" :data-id="m.id" :class="['msg-row', isOwnMessage(m) ? 'own' : 'other']">
+          <el-avatar v-if="!isOwnMessage(m) && messageAuthorFaceUrl(m)" shape="square" :src="messageAuthorFaceUrl(m)" :size="36" style="flex-shrink:0"></el-avatar>
+          <div :class="['msg-content-wrapper', m.__showTime ? 'show-time' : '']" @click="toggleMessageTime(m)" @touchstart="onTouchStart(m, $event)" @touchend="onTouchEnd" @touchmove="onTouchMove">
+            <div style="font-size:11px;color:#888;margin-bottom:2px;padding:0 4px">{{ messageAuthorName(m) }}</div>
+
+            <div v-if="!isGlobalChat && m.replied_to && repliedRefMessage(m)" class="reply-quote"
+                 style="padding:6px 8px;border-left:3px solid #ccc;background:#f7f7f7;margin:0 0 6px 0;border-radius:6px;width:100%">
+              <span style="cursor:pointer" @click.stop="scrollToMessage((typeof m.replied_to==='object') ? (m.replied_to.id||'') : m.replied_to)">
+                {{ messageAuthorName(repliedRefMessage(m)) }}: {{ messageTextPreview(repliedRefMessage(m)) || '[已回复]' }}
+              </span>
+            </div>
+
+            <div class="msg-bubble" :style="{ background: bubbleBackground(m) }">
+              <template v-if="m.type==='emoji' && m.content && m.content.url">
+                <img :src="m.content.url" alt="emoji" style="max-height:96px;display:block" />
+              </template>
+              <template v-else-if="m.type==='file' && m.content && isImageFile(m)">
+                <img :src="fileDisplayUrl(m)" :alt="m.content.filename || 'image'" style="max-width:100%;max-height:200px;display:block;border-radius:6px" />
+              </template>
+              <template v-else-if="m.type==='file' && m.content && isVideoFile(m)">
+                <video :src="fileDisplayUrl(m)" controls style="max-width:100%;max-height:240px;display:block;border-radius:8px"></video>
+                <div v-if="m.content.filename" style="margin-top:6px;font-size:12px;color:#666">{{ m.content.filename }}</div>
+              </template>
+              <template v-else-if="m.type==='file' && m.content && (m.content.url || m.content.__localUrl)">
+                <a :href="fileDisplayUrl(m)" target="_blank" rel="noopener" style="color:#0366d6;text-decoration:none">
+                  {{ m.content.filename || '下载文件' }}
+                </a>
+              </template>
+              <template v-else>
+                <span style="white-space:pre-wrap">{{ messageTextPreview(m) }}</span>
+              </template>
+            </div>
+            <div class="msg-time">{{ formatTime(m) }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="ctxMenuVisible" class="ctx-menu" :style="{ left: ctxMenuX + 'px', top: ctxMenuY + 'px' }" @click.stop>
+        <div class="ctx-menu-item" @click="ctxReply">回复</div>
+      </div>
+
+      <div class="input-area" ref="inputAreaEl">
+        <div v-if="replyTarget" style="padding:6px 8px;background:#f7f7f7;border-radius:6px;font-size:12px;display:flex;justify-content:space-between;align-items:center;border-left:3px solid #ccc">
+          <span>回复: {{ replyPreview }}</span>
+          <el-button size="small" @click="clearReplyTarget">取消</el-button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end">
+          <input ref="fileInputEl" type="file" accept="image/*,video/*" style="display:none" @change="onFileSelected" />
+          <el-button v-if="!isGlobalChat" @click="openFilePicker" style="flex-shrink:0">文件</el-button>
+          <el-button v-if="!isGlobalChat" @click="toggleEmojiPanel" style="flex-shrink:0">😊</el-button>
+          <el-input v-model="msgInput" type="textarea" :rows="2" placeholder="输入消息" @keyup.enter.ctrl="sendText" style="flex:1"></el-input>
+          <el-button type="primary" @click="sendText" style="flex-shrink:0">发送</el-button>
+        </div>
+
+        <div v-if="emojiPanelVisible" style="max-height:200px;overflow:auto;background:#fff;border:1px solid #ddd;padding:8px;border-radius:6px;margin-top:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <strong>我的表情包</strong>
+            <el-button size="small" @click="goEmojiManage">管理</el-button>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            <button v-for="p in emojiPacks" :key="p.id" @click="sendEmoji(p)" style="border:none;background:transparent;padding:4px;cursor:pointer">
+              <img :src="p.url" alt="emoji" style="width:48px;height:48px;object-fit:contain" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+    <script src="/api/socket.io/socket.io.js"></script>
+    <script src="/m/chat_detail.js"></script>
+    <script>
+      // Disable pinch-zoom on iOS Safari
+      document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, { passive: false });
+      document.addEventListener('gesturechange', function (e) { e.preventDefault(); }, { passive: false });
+      document.addEventListener('gestureend', function (e) { e.preventDefault(); }, { passive: false });
+    </script>
+  </body>
+</html>

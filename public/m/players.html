@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>玩家 - Minechat</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <style>
+      [v-cloak]{display:none}
+      html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+      body{margin:0;padding:0}
+      input,textarea,.el-input__inner,.el-textarea__inner{font-size:16px !important}
+      .top-bar{position:fixed;top:0;left:0;right:0;height:50px;background:#fff;border-bottom:1px solid #e6e6e6;display:flex;align-items:center;justify-content:space-between;padding:0 12px;z-index:100}
+      .content-area{position:fixed;top:50px;left:0;right:0;bottom:56px;overflow:auto;padding:12px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+      .bottom-nav{position:fixed;bottom:0;left:0;right:0;height:56px;background:#fff;border-top:1px solid #e6e6e6;display:flex;justify-content:space-around;align-items:center;z-index:100}
+      .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;color:#666;font-size:12px;padding:4px;text-decoration:none}
+      .nav-item.active{color:#409eff}
+      .player-item{padding:12px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center}
+    </style>
+  </head>
+  <body>
+    <div id="app" v-cloak>
+      <div class="top-bar">
+        <h3 style="margin:0">玩家</h3>
+      </div>
+
+      <div class="content-area">
+        <el-input v-model="q" placeholder="搜索玩家" clearable @input="onInput" style="margin-bottom:12px"></el-input>
+        <div v-for="u in filtered" :key="u.id" class="player-item">
+          <div style="display:flex;align-items:center;gap:10px;flex:1">
+            <el-avatar v-if="u.faceUrl" shape="square" :src="u.faceUrl" :size="40"></el-avatar>
+            <el-avatar v-else shape="square" :size="40">{{ (u.username || u.id).charAt(0).toUpperCase() }}</el-avatar>
+            <div>
+              <div style="font-weight:500">{{ u.username || u.id }}</div>
+              <div style="font-size:12px;color:#888">{{ u.id }}</div>
+            </div>
+          </div>
+          <el-button size="small" type="primary" @click="openChat(u.id)">私聊</el-button>
+        </div>
+      </div>
+
+      <div class="bottom-nav">
+        <a href="/m/chats.html" class="nav-item">
+          <span style="font-size:20px">💬</span>
+          <span>会话</span>
+        </a>
+        <a href="/m/players.html" class="nav-item active">
+          <span style="font-size:20px">👥</span>
+          <span>玩家</span>
+        </a>
+        <a href="/m/me.html" class="nav-item">
+          <span style="font-size:20px">👤</span>
+          <span>我</span>
+        </a>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+    <script src="/m/players.js"></script>
+    <script>
+      document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, { passive: false });
+      document.addEventListener('gesturechange', function (e) { e.preventDefault(); }, { passive: false });
+      document.addEventListener('gestureend', function (e) { e.preventDefault(); }, { passive: false });
+    </script>
+  </body>
+</html>
