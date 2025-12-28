@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
     <style>
       [v-cloak]{display:none}
-      html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+      html,body{height:100%;overflow:hidden;overscroll-behavior:none;-webkit-text-size-adjust:100%}
       body{margin:0;padding:0;background:#f5f5f5}
       input,textarea,.el-input__inner,.el-textarea__inner{font-size:16px !important}
       .top-bar{position:fixed;top:0;left:0;right:0;height:50px;background:#fff;border-bottom:1px solid #e6e6e6;display:flex;align-items:center;padding:0 12px;z-index:100;gap:8px}
@@ -57,6 +57,34 @@
       document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, { passive: false });
       document.addEventListener('gesturechange', function (e) { e.preventDefault(); }, { passive: false });
       document.addEventListener('gestureend', function (e) { e.preventDefault(); }, { passive: false });
+
+      (function () {
+        var meta = document.querySelector('meta[name="viewport"]');
+        if (!meta) return;
+        var canonical = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
+        function restoreViewport() {
+          try {
+            meta.setAttribute('content', canonical);
+          } catch (e) {}
+        }
+        function onPossibleZoomChange() {
+          restoreViewport();
+          setTimeout(restoreViewport, 50);
+          setTimeout(restoreViewport, 250);
+        }
+        document.addEventListener('focusin', function (e) {
+          var t = e && e.target;
+          if (!t) return;
+          var tag = (t.tagName || '').toUpperCase();
+          if (tag === 'INPUT' || tag === 'TEXTAREA') onPossibleZoomChange();
+        }, true);
+        document.addEventListener('focusout', function () { onPossibleZoomChange(); }, true);
+        window.addEventListener('resize', onPossibleZoomChange);
+        window.addEventListener('orientationchange', onPossibleZoomChange);
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener('resize', onPossibleZoomChange);
+        }
+      })();
     </script>
   </body>
 </html>

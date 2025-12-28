@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
     <style>
       [v-cloak]{display:none}
-      html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+      html,body{height:100%;overflow:hidden;overscroll-behavior:none;-webkit-text-size-adjust:100%}
       body{margin:0;padding:0}
       input,textarea,.el-input__inner,.el-textarea__inner{font-size:16px !important}
       .top-bar{position:fixed;top:0;left:0;right:0;height:50px;background:#fff;border-bottom:1px solid #e6e6e6;display:flex;align-items:center;padding:0 12px;z-index:100;gap:8px}
@@ -95,9 +95,13 @@
         </div>
         <div style="display:flex;gap:8px;align-items:flex-end">
           <input ref="fileInputEl" type="file" accept="image/*,video/*" style="display:none" @change="onFileSelected" />
-          <el-button v-if="!isGlobalChat" @click="openFilePicker" style="flex-shrink:0">文件</el-button>
-          <el-button v-if="!isGlobalChat" @click="toggleEmojiPanel" style="flex-shrink:0">😊</el-button>
-          <el-input v-model="msgInput" type="textarea" :rows="2" placeholder="输入消息" @keyup.enter.ctrl="sendText" style="flex:1"></el-input>
+          <el-button v-if="!isGlobalChat" @click="openFilePicker" circle style="flex-shrink:0">
+            <el-icon><FolderOpened /></el-icon>
+          </el-button>
+          <el-button v-if="!isGlobalChat" @click="toggleEmojiPanel" circle style="flex-shrink:0">
+            <el-icon><Smile /></el-icon>
+          </el-button>
+          <el-input v-model="msgInput" placeholder="输入消息" @keyup.enter="sendText" style="flex:1"></el-input>
           <el-button type="primary" @click="sendText" style="flex-shrink:0">发送</el-button>
         </div>
 
@@ -117,6 +121,7 @@
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
     <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue"></script>
     <script src="/api/socket.io/socket.io.js"></script>
     <script src="/m/chat_detail.js"></script>
     <script>
@@ -124,6 +129,35 @@
       document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, { passive: false });
       document.addEventListener('gesturechange', function (e) { e.preventDefault(); }, { passive: false });
       document.addEventListener('gestureend', function (e) { e.preventDefault(); }, { passive: false });
+
+      // Some WebViews still change zoom on input focus; force restore to 1x.
+      (function () {
+        var meta = document.querySelector('meta[name="viewport"]');
+        if (!meta) return;
+        var canonical = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
+        function restoreViewport() {
+          try {
+            meta.setAttribute('content', canonical);
+          } catch (e) {}
+        }
+        function onPossibleZoomChange() {
+          restoreViewport();
+          setTimeout(restoreViewport, 50);
+          setTimeout(restoreViewport, 250);
+        }
+        document.addEventListener('focusin', function (e) {
+          var t = e && e.target;
+          if (!t) return;
+          var tag = (t.tagName || '').toUpperCase();
+          if (tag === 'INPUT' || tag === 'TEXTAREA') onPossibleZoomChange();
+        }, true);
+        document.addEventListener('focusout', function () { onPossibleZoomChange(); }, true);
+        window.addEventListener('resize', onPossibleZoomChange);
+        window.addEventListener('orientationchange', onPossibleZoomChange);
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener('resize', onPossibleZoomChange);
+        }
+      })();
     </script>
   </body>
 </html>

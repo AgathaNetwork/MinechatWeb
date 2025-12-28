@@ -128,8 +128,12 @@
 
             <div style="margin-top:10px;display:flex;gap:8px;align-items:center;position:relative;flex-shrink:0">
               <input ref="fileInputEl" type="file" accept="image/*,video/*" style="display:none" @change="onFileSelected" />
-              <el-button v-if="!isGlobalChat" type="default" @click.stop="openFilePicker">文件</el-button>
-              <el-button v-if="!isGlobalChat" type="default" @click.stop="toggleEmojiPanel">😊</el-button>
+              <el-button v-if="!isGlobalChat" type="default" @click.stop="openFilePicker" circle>
+                <el-icon><FolderOpened /></el-icon>
+              </el-button>
+              <el-button v-if="!isGlobalChat" type="default" @click.stop="toggleEmojiPanel" circle>
+                <el-icon><Smile /></el-icon>
+              </el-button>
               <el-input v-model="msgInput" placeholder="输入消息" @keyup.enter="sendText"></el-input>
               <el-button type="primary" @click="sendText">发送</el-button>
 
@@ -152,6 +156,7 @@
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
     <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue"></script>
     <script src="/api/socket.io/socket.io.js"></script>
     <script src="/chat.js"></script>
   </body>

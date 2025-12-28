@@ -1,7 +1,7 @@
 // Mobile chat detail page - simplified version
 const { createApp, ref, reactive, computed, onMounted, nextTick } = Vue;
 
-createApp({
+const app = createApp({
   setup() {
     const apiBase = ref('');
     const token = ref(localStorage.getItem('token') || null);
@@ -39,7 +39,7 @@ createApp({
 
     async function fetchConfig() {
       const conf = await fetch('/config').then((r) => r.json());
-      apiBase.value = conf.apiBase || '';
+      apiBase.value = conf.apiProxyBase || conf.apiBase || '';
     }
 
     function authHeaders(extra) {
@@ -50,13 +50,23 @@ createApp({
     }
 
     async function safeFetch(url, options) {
-      const opt = Object.assign({}, options || {});
+      const opt = Object.assign({ credentials: 'include' }, options || {});
       opt.headers = authHeaders(opt.headers);
-      // 只在没有 token 时才使用 credentials（依赖 cookie）
-      if (!token.value) {
-        opt.credentials = 'include';
+
+      const res = await fetch(url, opt);
+      if (res.status === 401) {
+        let txt = '';
+        try {
+          txt = await res.clone().text();
+        } catch (e) {}
+        if (/invalid token/i.test(txt)) {
+          token.value = null;
+          try {
+            localStorage.removeItem('token');
+          } catch (e) {}
+        }
       }
-      return fetch(url, opt);
+      return res;
     }
 
     function getCachedFaceUrl(userId) {
@@ -428,6 +438,17 @@ createApp({
       } catch (e) {}
     }
 
+    function restoreViewportScale() {
+      try {
+        const meta = document.querySelector('meta[name="viewport"]');
+        if (!meta) return;
+        meta.setAttribute(
+          'content',
+          'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover'
+        );
+      } catch (e) {}
+    }
+
     function onTouchMove() {
       if (longPressTimer.value) {
         clearTimeout(longPressTimer.value);
@@ -612,6 +633,9 @@ createApp({
       const text = (msgInput.value || '').trim();
       if (!text || !currentChatId.value) return;
 
+      // Some browsers/WebViews change zoom during input; force restore to 1x.
+      restoreViewportScale();
+
       const tempId = 'temp_' + Date.now() + '_' + Math.random();
       const optimisticMsg = {
         id: tempId,
@@ -631,6 +655,8 @@ createApp({
       msgInput.value = '';
       clearReplyTarget();
 
+      restoreViewportScale();
+
       await nextTick();
       if (messagesEl.value) {
         messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
@@ -642,8 +668,8 @@ createApp({
           ? `${apiBase.value}/global/messages`
           : `${apiBase.value}/chats/${encodeURIComponent(currentChatId.value)}/messages`;
 
-        const body = { type: 'text', content: { text } };
-        if (optimisticMsg.replied_to) body.repliedTo = optimisticMsg.replied_to;
+        const body = isGlobal ? { content: text } : { type: 'text', content: text };
+        if (!isGlobal && optimisticMsg.replied_to) body.repliedTo = optimisticMsg.replied_to;
 
         const res = await safeFetch(url, {
           method: 'POST',
@@ -659,6 +685,8 @@ createApp({
         }
       } catch (e) {
         optimisticMsg.__status = 'failed';
+      } finally {
+        restoreViewportScale();
       }
     }
 
@@ -689,6 +717,8 @@ createApp({
       if (!currentChatId.value) return;
       if (isGlobalChat.value) return;
 
+      restoreViewportScale();
+
       const tempId = `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
       let localUrl = '';
       try {
@@ -715,6 +745,8 @@ createApp({
       messages.value.push(optimisticMsg);
       await nextTick();
       if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
+
+      restoreViewportScale();
 
       try {
         const fd = new FormData();
@@ -745,6 +777,7 @@ createApp({
       } finally {
         await nextTick();
         if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
+        restoreViewportScale();
       }
     }
 
@@ -878,4 +911,15 @@ createApp({
       onMessagesScroll,
     };
   },
-}).use(ElementPlus).mount('#app');
+});
+
+try {
+  const icons = window.ElementPlusIconsVue;
+  if (icons && typeof icons === 'object') {
+    for (const [key, component] of Object.entries(icons)) {
+      app.component(key, component);
+    }
+  }
+} catch (e) {}
+
+app.use(ElementPlus).mount('#app');

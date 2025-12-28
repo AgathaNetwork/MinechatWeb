@@ -1,7 +1,7 @@
 // Vue 3 + Element Plus chat page
 const { createApp, ref, reactive, computed, onMounted, nextTick } = Vue;
 
-createApp({
+const app = createApp({
   setup() {
     const apiBase = ref('');
     const apiAuthBase = ref('');
@@ -684,10 +684,12 @@ createApp({
       if (m.type === 'emoji' && m.content) {
         return '[表情] ' + (m.content.filename || '');
       }
-      if (typeof m.content === 'object') {
+      if (m.content && typeof m.content === 'object') {
+        // content might be {text:...} or other structured payload
         return m.content.text || JSON.stringify(m.content);
       }
-      return m.content || '';
+      if (m.content === null || m.content === undefined) return '';
+      return String(m.content);
     }
 
     function parseMessageTime(m) {
@@ -768,8 +770,17 @@ createApp({
     function showCtxMenu(ev, msg) {
       if (isGlobalChat.value) return;
       ctxMenuMsg.value = msg;
-      ctxMenuX.value = ev.clientX;
-      ctxMenuY.value = ev.clientY;
+      let x = ev.clientX;
+      let y = ev.clientY;
+      // keep menu within viewport
+      const menuWidth = 140;
+      const menuHeight = 48;
+      if (x + menuWidth > window.innerWidth) x = window.innerWidth - menuWidth - 10;
+      if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 10;
+      if (x < 10) x = 10;
+      if (y < 10) y = 10;
+      ctxMenuX.value = x;
+      ctxMenuY.value = y;
       ctxMenuVisible.value = true;
     }
 
@@ -1235,8 +1246,14 @@ createApp({
         await loadChats();
       }
 
-      // click outside closes emoji panel
-      document.addEventListener('click', () => {
+      // click outside closes emoji panel / ctx menu
+      document.addEventListener('click', (ev) => {
+        try {
+          // Some environments may fire click after right-click; don't instantly close.
+          if (ev && ev.button === 2) return;
+          // Ignore modified clicks (e.g. Ctrl+Click on mac)
+          if (ev && (ev.ctrlKey || ev.metaKey)) return;
+        } catch (e) {}
         emojiPanelVisible.value = false;
         hideCtxMenu();
       });
@@ -1300,4 +1317,15 @@ createApp({
       onNav,
     };
   },
-}).use(ElementPlus).mount('#app');
+});
+
+try {
+  const icons = window.ElementPlusIconsVue;
+  if (icons && typeof icons === 'object') {
+    for (const [key, component] of Object.entries(icons)) {
+      app.component(key, component);
+    }
+  }
+} catch (e) {}
+
+app.use(ElementPlus).mount('#app');

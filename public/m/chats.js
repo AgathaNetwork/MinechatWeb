@@ -14,7 +14,7 @@ createApp({
 
     async function fetchConfig() {
       const conf = await fetch('/config').then((r) => r.json());
-      apiBase.value = conf.apiBase || '';
+      apiBase.value = conf.apiProxyBase || conf.apiBase || '';
     }
 
     function authHeaders() {

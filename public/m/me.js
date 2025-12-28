@@ -5,7 +5,8 @@ createApp({
   setup() {
     const apiBase = ref('');
     const token = ref(localStorage.getItem('token') || null);
-    const isLoggedIn = computed(() => !!token.value);
+    const sessionOk = ref(false);
+    const isLoggedIn = computed(() => !!tokenValue() || !!sessionOk.value);
     const selfUserId = ref('');
     const selfUsername = ref('');
     const selfFaceUrl = ref('');
@@ -20,37 +21,115 @@ createApp({
       return name.charAt(0).toUpperCase();
     });
 
+    function tokenValue() {
+      const t = (token.value || '').trim();
+      return t ? t : null;
+    }
+
+    function clearBadToken() {
+      token.value = null;
+      try {
+        localStorage.removeItem('token');
+      } catch (e) {}
+    }
+
     async function fetchConfig() {
       const conf = await fetch('/config').then((r) => r.json());
-      apiBase.value = conf.apiBase || '';
+      apiBase.value = conf.apiProxyBase || conf.apiBase || '';
     }
 
     function authHeaders() {
       const h = {};
-      const t = token.value;
+      const t = tokenValue();
       if (t) h['Authorization'] = `Bearer ${t}`;
       return h;
     }
 
     async function safeFetch(url, options) {
       const opt = Object.assign({}, options || {});
-      opt.headers = authHeaders();
+      opt.headers = Object.assign({}, opt.headers || {}, authHeaders());
       // 只在没有 token 时才使用 credentials（依赖 cookie）
-      if (!token.value) {
+      if (!tokenValue()) {
         opt.credentials = 'include';
       }
-      return fetch(url, opt);
+
+      const res = await fetch(url, opt);
+      if (res.status === 401) {
+        let txt = '';
+        try {
+          txt = await res.clone().text();
+        } catch (e) {}
+        if (/invalid token/i.test(txt)) {
+          clearBadToken();
+        }
+      }
+      return res;
+    }
+
+    async function checkSession() {
+      try {
+        const res = await fetch(`${apiBase.value}/chats`, { credentials: 'include' });
+        sessionOk.value = res.ok;
+        return res.ok;
+      } catch (e) {
+        sessionOk.value = false;
+        return false;
+      }
+    }
+
+    function decodeJwtPayload(jwt) {
+      try {
+        const parts = String(jwt || '').split('.');
+        if (parts.length !== 3) return null;
+        const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const padded = payload + '='.repeat((4 - (payload.length % 4)) % 4);
+        const json = atob(padded);
+        return JSON.parse(json);
+      } catch (e) {
+        return null;
+      }
     }
 
     async function loadSelf() {
       try {
-        const res = await safeFetch(`${apiBase.value}/me`);
+        await checkSession();
+
+        // Prefer /users/me (desktop-compatible)
+        let res = await safeFetch(`${apiBase.value}/users/me`);
+        if (!res.ok && res.status === 404) {
+          // Fallback for older backend
+          res = await safeFetch(`${apiBase.value}/me`);
+        }
         if (!res.ok) return;
-        const me = await res.json();
-        selfUserId.value = me.id || '';
-        selfUsername.value = me.username || '';
+        const me = await res.json().catch(() => null);
+        if (!me || typeof me !== 'object') return;
+
+        const id = me.id || me.userId || me.uid;
+        selfUserId.value = id !== undefined && id !== null ? String(id) : '';
+        selfUsername.value = me.username || me.displayName || me.name || '';
         const face = me.faceUrl || me.face_url || me.face;
         if (face) selfFaceUrl.value = String(face);
+
+        // If backend doesn't return username, try resolve from token + /users list
+        if (!selfUsername.value) {
+          const t = tokenValue();
+          const payload = t ? decodeJwtPayload(t) : null;
+          const meId = payload && (payload.userId || payload.uid || payload.id || payload.sub);
+          if (meId) {
+            const listRes = await safeFetch(`${apiBase.value}/users`);
+            if (listRes.ok) {
+              const list = await listRes.json().catch(() => null);
+              if (Array.isArray(list)) {
+                const u = list.find(x => x && String(x.id) === String(meId));
+                if (u) {
+                  selfUsername.value = u.username || u.displayName || selfUsername.value;
+                  const f = u.faceUrl || u.face_url || u.face;
+                  if (f && !selfFaceUrl.value) selfFaceUrl.value = String(f);
+                }
+              }
+            }
+          }
+        }
       } catch (e) {}
     }
 
@@ -60,17 +139,23 @@ createApp({
       updating.value = true;
 
       try {
-        const res = await safeFetch(`${apiBase.value}/me/update-face`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        });
+        // Desktop-compatible endpoint
+        let res = await safeFetch(`${apiBase.value}/users/me/face`, { method: 'POST' });
+        if (!res.ok && res.status === 404) {
+          // Fallback for older backend
+          res = await safeFetch(`${apiBase.value}/me/update-face`, { method: 'POST' });
+        }
 
         if (!res.ok) {
           const err = await res.text();
           throw new Error(err || '更新失败');
         }
 
-        const data = await res.json();
+        const data = await res.json().catch(() => null);
+        if (data && typeof data === 'object') {
+          const url = data.url || data.faceUrl || data.face_url || '';
+          if (url) selfFaceUrl.value = String(url);
+        }
         lastResult.value = '头像更新成功';
         
         await loadSelf();
