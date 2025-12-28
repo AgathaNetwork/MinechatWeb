@@ -397,6 +397,13 @@ createApp({
       return v ? String(v) : '';
     }
 
+    function messageAuthorFaceUrl(m) {
+      if (!m || isOwnMessage(m)) return '';
+      const fromUser = m.from_user || m.fromUser || m.from;
+      if (!fromUser) return '';
+      return getCachedFaceUrl(fromUser);
+    }
+
     async function loadUsersIndex() {
       try {
         const res = await safeFetch(`${apiBase.value}/users`);
@@ -1227,6 +1234,7 @@ createApp({
 
       // helpers
       messageAuthorName,
+      messageAuthorFaceUrl,
       messageTextPreview,
       repliedRefMessage,
       scrollToMessage,
