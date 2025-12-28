@@ -10,12 +10,16 @@ createApp({
     const selfUserId = ref('');
     const selfUsername = ref('');
     const selfFaceUrl = ref('');
+    const selfMinecraftUuid = ref('');
     const updating = ref(false);
     const lastResult = ref('');
     const lastError = ref('');
 
     const selfDisplayName = computed(() => selfUsername.value || selfUserId.value || '未登录');
-    const selfIdHint = computed(() => selfUserId.value ? `ID: ${selfUserId.value}` : '');
+    const selfIdHint = computed(() => {
+      const uuid = (selfMinecraftUuid.value || '').trim();
+      return uuid ? `UUID: ${uuid}` : '';
+    });
     const selfInitial = computed(() => {
       const name = selfUsername.value || selfUserId.value || '?';
       return name.charAt(0).toUpperCase();
@@ -90,6 +94,26 @@ createApp({
       }
     }
 
+    function extractMinecraftUuid(obj) {
+      try {
+        if (!obj || typeof obj !== 'object') return '';
+        const candidates = [
+          obj.minecraftUuid,
+          obj.minecraft_uuid,
+          obj.minecraftUUID,
+          obj.mcUuid,
+          obj.mc_uuid,
+          obj.uuid,
+        ];
+        for (const c of candidates) {
+          if (c !== undefined && c !== null && String(c).trim()) return String(c).trim();
+        }
+        return '';
+      } catch (e) {
+        return '';
+      }
+    }
+
     async function loadSelf() {
       try {
         await checkSession();
@@ -110,6 +134,9 @@ createApp({
         const face = me.faceUrl || me.face_url || me.face;
         if (face) selfFaceUrl.value = String(face);
 
+        const uuid = extractMinecraftUuid(me);
+        if (uuid) selfMinecraftUuid.value = uuid;
+
         // If backend doesn't return username, try resolve from token + /users list
         if (!selfUsername.value) {
           const t = tokenValue();
@@ -125,6 +152,9 @@ createApp({
                   selfUsername.value = u.username || u.displayName || selfUsername.value;
                   const f = u.faceUrl || u.face_url || u.face;
                   if (f && !selfFaceUrl.value) selfFaceUrl.value = String(f);
+
+                  const uuid2 = extractMinecraftUuid(u);
+                  if (uuid2 && !selfMinecraftUuid.value) selfMinecraftUuid.value = uuid2;
                 }
               }
             }
@@ -197,6 +227,7 @@ createApp({
       selfIdHint,
       selfInitial,
       selfFaceUrl,
+      selfMinecraftUuid,
       updating,
       lastResult,
       lastError,

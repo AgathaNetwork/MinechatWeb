@@ -33,7 +33,7 @@
             <el-avatar v-else shape="square" :size="40">{{ (u.username || u.id).charAt(0).toUpperCase() }}</el-avatar>
             <div>
               <div style="font-weight:500">{{ u.username || u.id }}</div>
-              <div style="font-size:12px;color:#888">{{ u.id }}</div>
+              <div style="font-size:12px;color:#888">{{ u.mcUuid || '' }}</div>
             </div>
           </div>
           <el-button size="small" type="primary" @click="openChat(u.id)">私聊</el-button>

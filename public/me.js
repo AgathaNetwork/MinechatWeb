@@ -15,6 +15,7 @@ createApp({
     const selfUserId = ref('');
     const selfUsername = ref('');
     const selfFaceUrl = ref('');
+    const selfMinecraftUuid = ref('');
 
     const lastResult = ref('');
     const lastError = ref('');
@@ -33,9 +34,30 @@ createApp({
     });
 
     const selfIdHint = computed(() => {
-      if (!selfUserId.value) return '';
-      return `ID: ${selfUserId.value}`;
+      const uuid = (selfMinecraftUuid.value || '').trim();
+      if (!uuid) return '';
+      return `UUID: ${uuid}`;
     });
+
+    function extractMinecraftUuid(obj) {
+      try {
+        if (!obj || typeof obj !== 'object') return '';
+        const candidates = [
+          obj.minecraftUuid,
+          obj.minecraft_uuid,
+          obj.minecraftUUID,
+          obj.mcUuid,
+          obj.mc_uuid,
+          obj.uuid,
+        ];
+        for (const c of candidates) {
+          if (c !== undefined && c !== null && String(c).trim()) return String(c).trim();
+        }
+        return '';
+      } catch (e) {
+        return '';
+      }
+    }
 
     function tokenValue() {
       const t = (token.value || '').trim();
@@ -125,6 +147,9 @@ createApp({
         const face = me.faceUrl || me.face_url || me.face;
         if (face) selfFaceUrl.value = String(face);
 
+        const uuid = extractMinecraftUuid(me);
+        if (uuid) selfMinecraftUuid.value = uuid;
+
         return true;
       } catch (e) {
         return false;
@@ -150,6 +175,9 @@ createApp({
         selfUsername.value = u.username || u.displayName || selfUsername.value;
         const face = u.faceUrl || u.face_url || u.face;
         if (face) selfFaceUrl.value = String(face);
+
+        const uuid = extractMinecraftUuid(u);
+        if (uuid) selfMinecraftUuid.value = uuid;
         return true;
       } catch (e) {
         return false;
@@ -236,6 +264,7 @@ createApp({
       selfUserId,
       selfUsername,
       selfFaceUrl,
+      selfMinecraftUuid,
       selfDisplayName,
       selfInitial,
       selfIdHint,

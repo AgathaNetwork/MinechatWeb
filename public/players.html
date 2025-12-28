@@ -30,7 +30,7 @@
             <div v-for="u in filtered" :key="u.id" style="display:flex;justify-content:space-between;align-items:center;padding:8px;border-bottom:1px solid #eee">
               <div>
                 <div style="font-weight:600">{{ u.username || u.id }}</div>
-                <div style="font-size:12px;color:#888">{{ u.id }}</div>
+					<div style="font-size:12px;color:#888">{{ u.mcUuid || '' }}</div>
               </div>
               <div>
                 <el-button size="small" type="primary" @click="openChat(u.id)">私聊</el-button>

@@ -106,7 +106,22 @@ createApp({
           const txt = await res.text().catch(()=> '');
           throw new Error(`load users failed: ${res.status} ${txt}`);
         }
-        users.value = await res.json();
+        const raw = await res.json();
+
+        function extractMinecraftUuid(obj){
+          try{
+            if(!obj || typeof obj !== 'object') return '';
+            const candidates = [obj.minecraftUuid, obj.minecraft_uuid, obj.minecraftUUID, obj.mcUuid, obj.mc_uuid, obj.uuid];
+            for(const c of candidates){
+              if(c !== undefined && c !== null && String(c).trim()) return String(c).trim();
+            }
+            return '';
+          }catch(e){
+            return '';
+          }
+        }
+
+        users.value = Array.isArray(raw) ? raw.map(u => Object.assign({}, u, { mcUuid: extractMinecraftUuid(u) })) : [];
         filtered.value = users.value.slice();
 
         // update self avatar after list is ready

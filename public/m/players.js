@@ -15,9 +15,30 @@ createApp({
       return users.value.filter(u => {
         const username = (u.username || '').toLowerCase();
         const id = (u.id || '').toLowerCase();
-        return username.includes(query) || id.includes(query);
+        const mc = (u.mcUuid || '').toLowerCase();
+        return username.includes(query) || id.includes(query) || mc.includes(query);
       });
     });
+
+    function extractMinecraftUuid(obj) {
+      try {
+        if (!obj || typeof obj !== 'object') return '';
+        const candidates = [
+          obj.minecraftUuid,
+          obj.minecraft_uuid,
+          obj.minecraftUUID,
+          obj.mcUuid,
+          obj.mc_uuid,
+          obj.uuid,
+        ];
+        for (const c of candidates) {
+          if (c !== undefined && c !== null && String(c).trim()) return String(c).trim();
+        }
+        return '';
+      } catch (e) {
+        return '';
+      }
+    }
 
     async function fetchConfig() {
       const conf = await fetch('/config').then((r) => r.json());
@@ -49,6 +70,7 @@ createApp({
         users.value = all.map(u => ({
           ...u,
           faceUrl: u.faceUrl || u.face_url || u.face || '',
+          mcUuid: extractMinecraftUuid(u),
         }));
       } catch (e) {}
     }
