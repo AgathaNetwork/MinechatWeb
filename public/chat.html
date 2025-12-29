@@ -38,18 +38,27 @@
           <el-aside width="280px" style="border-right:1px solid #e6e6e6;background:#fff;padding:12px;overflow:auto">
             <div>
               <h3 style="margin:0 0 8px 0">全服聊天</h3>
-              <div @click="openGlobal" :style="{cursor:'pointer',padding:'8px',borderRadius:'6px',background: currentChatId==='global' ? '#eef6ff' : 'transparent'}">全服</div>
+              <div @click="openGlobal" :style="{cursor:'pointer',padding:'8px',borderRadius:'6px',background: currentChatId==='global' ? '#eef6ff' : 'transparent'}">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <el-avatar shape="square" src="/img/Ag_0404.png" :size="40"></el-avatar>
+                  <div style="font-weight:500">全服</div>
+                </div>
+              </div>
             </div>
             <div style="margin-top:12px">
               <h3 style="margin:0 0 8px 0">会话</h3>
               <div v-for="c in chats" :key="c.id" @click="onChatClick(c)"
                    :style="{cursor:'pointer',padding:'8px',borderRadius:'6px',marginBottom:'6px',background: currentChatId===c.id ? '#eef6ff' : 'transparent',position:'relative'}">
-                <div style="display:flex;align-items:center;justify-content:space-between">
-                  <div style="flex:1;min-width:0">
-                    <div style="font-weight:500;margin-bottom:4px">{{ c.displayName || c.name || (c.members||[]).join(',') }}</div>
-                    <div style="font-size:12px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ formatLastMessage(c) }}</div>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                  <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+                    <el-avatar v-if="getChatAvatar(c)" shape="square" :src="getChatAvatar(c)" :size="40"></el-avatar>
+                    <el-avatar v-else shape="square" :size="40">{{ getChatInitial(c) }}</el-avatar>
+                    <div style="flex:1;min-width:0">
+                      <div style="font-weight:500;margin-bottom:4px">{{ getChatName(c) }}</div>
+                      <div style="font-size:12px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ formatLastMessage(c) }}</div>
+                    </div>
                   </div>
-                  <div v-if="hasUnread(c.id)" style="width:8px;height:8px;border-radius:50%;background:#1890ff;margin-left:8px;flex-shrink:0"></div>
+                  <div v-if="hasUnread(c.id)" style="width:8px;height:8px;border-radius:50%;background:#1890ff;flex-shrink:0"></div>
                 </div>
               </div>
             </div>

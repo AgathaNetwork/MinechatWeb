@@ -64,10 +64,31 @@ const app = createApp({
       return res;
     }
 
+    function normalizeFaceUrl(raw) {
+      try {
+        const u = String(raw || '').trim();
+        if (!u) return '';
+        if (/^(data:|blob:|https?:\/\/)/i.test(u)) return u;
+        if (u.startsWith('/api/')) return u;
+        if (u.startsWith('/')) {
+          const base = String(apiBase.value || '').replace(/\/$/, '');
+          if (base && base !== '/') return base + u;
+          return u;
+        }
+        // relative without leading slash
+        const base = String(apiBase.value || '').replace(/\/$/, '');
+        if (base && base !== '/') return base + '/' + u;
+        return u;
+      } catch (e) {
+        return '';
+      }
+    }
+
     function extractFaceUrl(u) {
       try {
         if (!u || typeof u !== 'object') return '';
-        return String(u.faceUrl || u.face_url || u.face || u.avatarUrl || u.avatar_url || u.avatar || '') || '';
+        const raw = u.faceUrl || u.face_url || u.face || u.avatarUrl || u.avatar_url || u.avatar || '';
+        return normalizeFaceUrl(raw);
       } catch (e) {
         return '';
       }
@@ -81,8 +102,11 @@ const app = createApp({
 
       userFetchInFlight[id] = (async () => {
         try {
-          // Required by spec: /api/user/:id (apiBase is usually /api)
-          const res = await safeFetch(`${apiBase.value}/user/${encodeURIComponent(id)}`);
+          // Prefer /users/:id (matches desktop); fallback /user/:id if backend uses singular.
+          let res = await safeFetch(`${apiBase.value}/users/${encodeURIComponent(id)}`);
+          if (!res.ok && res.status === 404) {
+            res = await safeFetch(`${apiBase.value}/user/${encodeURIComponent(id)}`);
+          }
           if (!res.ok) return null;
           const u = await res.json().catch(() => null);
           if (!u || typeof u !== 'object') return null;
@@ -248,34 +272,66 @@ const app = createApp({
         if (!me || typeof me !== 'object') return;
         const id = me.id || me.userId || me.uid;
         selfUserId.value = id !== undefined && id !== null ? String(id) : null;
+        if (selfUserId.value) {
+          userNameCache[String(selfUserId.value)] = me.username || me.displayName || me.name || userNameCache[String(selfUserId.value)] || String(selfUserId.value);
+        }
         const face = extractFaceUrl(me);
-        if (face) selfFaceUrl.value = face;
+        if (face) {
+          selfFaceUrl.value = face;
+          if (selfUserId.value) userFaceCache[String(selfUserId.value)] = face;
+        }
       } catch (e) {}
+    }
+
+    function getChatPeerId(chat) {
+      try {
+        if (!chat || typeof chat !== 'object') return null;
+        const members = Array.isArray(chat.members)
+          ? chat.members
+          : Array.isArray(chat.memberIds)
+            ? chat.memberIds
+            : null;
+        if (!selfUserId.value) return null;
+        const selfId = String(selfUserId.value);
+
+        // Self-chat may be represented as [self] or [self, self]
+        if (members && members.length === 1) {
+          return String(members[0]) === selfId ? selfId : null;
+        }
+        if (members && members.length === 2) {
+          const a = String(members[0]);
+          const b = String(members[1]);
+          if (a === selfId && b === selfId) return selfId;
+          const otherId = [a, b].find((mid) => mid !== selfId);
+          return otherId ? String(otherId) : null;
+        }
+        return null;
+      } catch (e) {
+        return null;
+      }
     }
 
     function getChatName(chat) {
       if (chat.displayName) return chat.displayName;
       if (chat.name) return chat.name;
       
-      const members = chat.members || chat.memberIds || [];
-      if (members.length === 2 && selfUserId.value) {
-        const otherId = members.find(m => String(m) !== String(selfUserId.value));
-        if (otherId && userNameCache[otherId]) {
-          return userNameCache[otherId];
-        }
+      const peerId = getChatPeerId(chat);
+      if (peerId && selfUserId.value && String(peerId) === String(selfUserId.value)) {
+        return '我';
       }
+      if (peerId && userNameCache[peerId]) return userNameCache[peerId];
+
+      const members = chat.members || chat.memberIds || [];
       return members.join(',') || chat.id;
     }
 
     function getChatAvatar(chat) {
-      const members = chat.members || chat.memberIds || [];
-      if (members.length === 2 && selfUserId.value) {
-        const otherId = members.find(m => String(m) !== String(selfUserId.value));
-        if (otherId && userFaceCache[otherId]) {
-          return userFaceCache[otherId];
-        }
+      const peerId = getChatPeerId(chat);
+      if (!peerId) return '';
+      if (selfUserId.value && String(peerId) === String(selfUserId.value)) {
+        return selfFaceUrl.value || userFaceCache[String(peerId)] || '';
       }
-      return '';
+      return userFaceCache[String(peerId)] || '';
     }
 
     function getChatInitial(chat) {

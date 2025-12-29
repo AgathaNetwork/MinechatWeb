@@ -38,6 +38,25 @@ const app = createApp({
     const ctxMenuY = ref(0);
     const ctxMenuMsg = ref(null);
 
+    function normalizeFaceUrl(raw) {
+      try {
+        const u = String(raw || '').trim();
+        if (!u) return '';
+        if (/^(data:|blob:|https?:\/\/)/i.test(u)) return u;
+        if (u.startsWith('/api/')) return u;
+        if (u.startsWith('/')) {
+          const base = String(apiBase.value || '').replace(/\/$/, '');
+          if (base && base !== '/') return base + u;
+          return u;
+        }
+        const base = String(apiBase.value || '').replace(/\/$/, '');
+        if (base && base !== '/') return base + '/' + u;
+        return u;
+      } catch (e) {
+        return '';
+      }
+    }
+
     const replyPreview = computed(() => {
       if (!replyTarget.value) return '';
       return messageTextPreview(replyTarget.value) || '[消息]';
@@ -112,7 +131,7 @@ const app = createApp({
         users.forEach(u => {
           const id = String(u.id);
           userNameCache[id] = u.username || u.id;
-          const face = u.faceUrl || u.face_url || u.face || '';
+          const face = normalizeFaceUrl(u.faceUrl || u.face_url || u.face || '');
           if (face) userFaceCache[id] = face;
         });
       } catch (e) {}
@@ -187,7 +206,7 @@ const app = createApp({
             if (id !== undefined && id !== null) selfUserId.value = String(id);
             const name = me.username || me.displayName;
             if (name && selfUserId.value) userNameCache[selfUserId.value] = String(name);
-            const face = me.faceUrl || me.face_url || me.face;
+            const face = normalizeFaceUrl(me.faceUrl || me.face_url || me.face || '');
             if (face && selfUserId.value) userFaceCache[selfUserId.value] = String(face);
             return;
           }
@@ -653,18 +672,32 @@ const app = createApp({
       try {
         if (isGlobal) {
           currentChatTitle.value = '全服';
+          currentChatFaceUrl.value = '/img/Ag_0404.png';
         } else {
           const metaRes = await safeFetch(`${apiBase.value}/chats/${encodeURIComponent(id)}`);
           if (metaRes.ok) {
             const chatMeta = await metaRes.json();
             currentChatTitle.value = chatMeta.displayName || chatMeta.name || '';
             const members = chatMeta.members || chatMeta.memberIds || [];
-            if (members.length === 2 && selfUserId.value) {
-              const otherId = members.find(m => String(m) !== String(selfUserId.value));
-              if (otherId) {
-                currentChatFaceUrl.value = getCachedFaceUrl(otherId);
-                if (!currentChatTitle.value) {
-                  currentChatTitle.value = userNameCache[otherId] || otherId;
+            if (selfUserId.value) {
+              const selfId = String(selfUserId.value);
+              if (Array.isArray(members) && members.length === 1 && String(members[0]) === selfId) {
+                currentChatFaceUrl.value = getCachedFaceUrl(selfId);
+                if (!currentChatTitle.value) currentChatTitle.value = '我';
+              } else if (Array.isArray(members) && members.length === 2) {
+                const a = String(members[0]);
+                const b = String(members[1]);
+                if (a === selfId && b === selfId) {
+                  currentChatFaceUrl.value = getCachedFaceUrl(selfId);
+                  if (!currentChatTitle.value) currentChatTitle.value = '我';
+                } else {
+                  const otherId = [a, b].find((m) => String(m) !== selfId);
+                  if (otherId) {
+                    currentChatFaceUrl.value = getCachedFaceUrl(otherId);
+                    if (!currentChatTitle.value) {
+                      currentChatTitle.value = userNameCache[otherId] || otherId;
+                    }
+                  }
                 }
               }
             }

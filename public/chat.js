@@ -462,7 +462,10 @@ const app = createApp({
             const id = me.id || me.userId || me.uid;
             if (id !== undefined && id !== null) selfUserId.value = String(id);
             const face = me.faceUrl || me.face_url || me.face;
-            if (face) selfFaceUrl.value = String(face);
+            if (face) {
+              selfFaceUrl.value = String(face);
+              if (selfUserId.value) userFaceCache[String(selfUserId.value)] = String(face);
+            }
             const name = me.username || me.displayName;
             if (name && selfUserId.value) userNameCache[selfUserId.value] = String(name);
             return;
@@ -630,6 +633,59 @@ const app = createApp({
           }
         })
       );
+    }
+
+    function getChatPeerId(chat) {
+      try {
+        if (!chat || typeof chat !== 'object') return null;
+        const members = Array.isArray(chat.members)
+          ? chat.members
+          : Array.isArray(chat.memberIds)
+            ? chat.memberIds
+            : null;
+        if (!selfUserId.value) return null;
+        const selfId = String(selfUserId.value);
+
+        // Self-chat may be represented as [self] or [self, self]
+        if (members && members.length === 1) {
+          return String(members[0]) === selfId ? selfId : null;
+        }
+        if (members && members.length === 2) {
+          const a = String(members[0]);
+          const b = String(members[1]);
+          if (a === selfId && b === selfId) return selfId;
+          const otherId = [a, b].find((mid) => mid !== selfId);
+          return otherId ? String(otherId) : null;
+        }
+
+        return null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function getChatName(chat) {
+      try {
+        if (!chat) return '';
+        return chat.displayName || chat.name || (chat.members || []).join(',') || String(chat.id || '');
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function getChatInitial(chat) {
+      const name = String(getChatName(chat) || '').trim();
+      if (!name) return '?';
+      return name.charAt(0).toUpperCase();
+    }
+
+    function getChatAvatar(chat) {
+      const peerId = getChatPeerId(chat);
+      if (!peerId) return '';
+      if (selfUserId.value && String(peerId) === String(selfUserId.value)) {
+        return selfFaceUrl.value || getCachedFaceUrl(peerId);
+      }
+      return getCachedFaceUrl(peerId);
     }
 
     function normalizeMessage(m, isGlobal) {
@@ -868,6 +924,16 @@ const app = createApp({
         if (!res.ok) throw new Error('未登录或请求失败');
         chats.value = await res.json();
 
+        // Prefetch 1:1 peer profiles so chat list can show avatars.
+        try {
+          const peerIds = new Set();
+          (chats.value || []).forEach((c) => {
+            const pid = getChatPeerId(c);
+            if (pid) peerIds.add(pid);
+          });
+          await fetchMissingUserNames(peerIds);
+        } catch (e) {}
+
         // open initial chat
         const params = new URLSearchParams(window.location.search);
         const openId = params.get('open') || (window.location.hash ? window.location.hash.replace(/^#/, '') : null);
@@ -909,6 +975,7 @@ const app = createApp({
       try {
         if (isGlobal) {
           currentChatTitle.value = '全服';
+          currentChatFaceUrl.value = '/img/Ag_0404.png';
         } else {
           currentChatTitle.value = '';
 
@@ -1337,6 +1404,9 @@ const app = createApp({
       messageAuthorFaceUrl,
       messageTextPreview,
       formatLastMessage,
+      getChatName,
+      getChatAvatar,
+      getChatInitial,
       hasUnread,
       repliedRefMessage,
       scrollToMessage,
