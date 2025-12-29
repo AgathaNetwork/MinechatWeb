@@ -2116,14 +2116,63 @@ const app = createApp({
       replyTarget.value = m;
     }
 
+    function canCopyText(m) {
+      try {
+        if (!m || typeof m !== 'object') return false;
+        if (isRecalledMessage(m)) return false;
+        const t = String(m.type || '').toLowerCase();
+        if (t === 'file' || t === 'emoji' || t === 'sticker') return false;
+        const txt = String(messageTextPreview(m) || '').trim();
+        return !!txt;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    async function copyToClipboardText(text) {
+      const s = String(text || '');
+      if (!s) throw new Error('empty');
+
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(s);
+          return;
+        }
+      } catch (e) {
+        // fall through
+      }
+
+      const ta = document.createElement('textarea');
+      ta.value = s;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      ta.style.top = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, ta.value.length);
+      const ok = document.execCommand && document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (!ok) throw new Error('copy failed');
+    }
+
     function showCtxMenu(ev, msg) {
-      if (isGlobalChat.value) return;
+      const isGlobal = !!isGlobalChat.value;
+      if (isGlobal && !canCopyText(msg)) return;
+
       ctxMenuMsg.value = msg;
       let x = ev.clientX;
       let y = ev.clientY;
       // keep menu within viewport
       const menuWidth = 140;
-      const menuHeight = 140;
+      let itemCount = 0;
+      try {
+        if (canCopyText(msg)) itemCount += 1;
+        if (!isGlobal) itemCount += 1; // reply
+        if (canRecallMessage(msg)) itemCount += 1;
+        if (canCollectEmoji(msg)) itemCount += 1;
+      } catch (e) {}
+      const menuHeight = Math.max(60, 18 + itemCount * 32);
       if (x + menuWidth > window.innerWidth) x = window.innerWidth - menuWidth - 10;
       if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 10;
       if (x < 10) x = 10;
@@ -2150,6 +2199,18 @@ const app = createApp({
       if (!ctxMenuMsg.value) return;
       setReplyTarget(ctxMenuMsg.value);
       hideCtxMenu();
+    }
+
+    async function ctxCopy() {
+      const msg = ctxMenuMsg.value;
+      if (!canCopyText(msg)) return;
+      hideCtxMenu();
+      try {
+        await copyToClipboardText(messageTextPreview(msg));
+        ElementPlus.ElMessage.success('已复制');
+      } catch (e) {
+        ElementPlus.ElMessage.error('复制失败');
+      }
     }
 
     function canCollectEmoji(m) {
@@ -2898,6 +2959,8 @@ const app = createApp({
       openGlobal,
       onMessageContextMenu,
       ctxReply,
+      ctxCopy,
+      canCopyText,
       canRecallMessage,
       ctxRecall,
       canCollectEmoji,

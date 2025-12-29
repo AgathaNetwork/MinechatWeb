@@ -16,6 +16,7 @@
       .bottom-nav{position:fixed;bottom:0;left:0;right:0;height:56px;background:#fff;border-top:1px solid #e6e6e6;display:flex;justify-content:space-around;align-items:center;z-index:100}
       .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;color:#666;font-size:12px;padding:4px;text-decoration:none}
       .nav-item.active{color:#409eff}
+      .section-title{font-size:16px;font-weight:600;margin:0 0 8px 0}
       .chat-item{padding:12px;border-bottom:1px solid #f0f0f0;cursor:pointer;display:flex;gap:10px;align-items:center;text-decoration:none;color:inherit}
       .chat-item:active{background:#f5f5f5}
       .unread-dot{width:8px;height:8px;border-radius:50%;background:#1890ff;flex-shrink:0}
@@ -35,14 +36,15 @@
       </div>
 
       <div class="content-area">
+        <div class="section-title">全服聊天</div>
         <div @click="openGlobal" class="chat-item">
           <el-avatar shape="square" src="/img/Ag_0404.png" :size="48"></el-avatar>
           <div style="flex:1;min-width:0">
-            <div style="font-weight:500;margin-bottom:4px">全服聊天</div>
-            <div style="font-size:12px;color:#999">点击进入全服聊天</div>
+            <div style="font-weight:500">全服</div>
           </div>
         </div>
 
+        <div style="margin-top:12px" class="section-title">会话</div>
         <el-skeleton animated :loading="chatsLoading">
           <template #template>
             <div v-for="i in 6" :key="i" class="chat-item" style="cursor:default">

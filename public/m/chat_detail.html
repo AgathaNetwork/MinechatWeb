@@ -131,9 +131,10 @@
       </div>
 
       <div v-if="ctxMenuVisible" class="ctx-menu" :style="{ left: ctxMenuX + 'px', top: ctxMenuY + 'px' }" @click.stop>
-        <div class="ctx-menu-item" @click="ctxReply">回复</div>
-        <div v-if="canRecallMessage(ctxMenuMsg)" class="ctx-menu-item" @click="ctxRecall">撤回</div>
-        <div v-if="canCollectEmoji(ctxMenuMsg)" class="ctx-menu-item" @click="ctxCollectEmoji">添加到表情包</div>
+        <div v-if="canCopyText(ctxMenuMsg)" class="ctx-menu-item" @click="ctxCopy">复制</div>
+        <div v-if="!isGlobalChat" class="ctx-menu-item" @click="ctxReply">回复</div>
+        <div v-if="!isGlobalChat && canRecallMessage(ctxMenuMsg)" class="ctx-menu-item" @click="ctxRecall">撤回</div>
+        <div v-if="!isGlobalChat && canCollectEmoji(ctxMenuMsg)" class="ctx-menu-item" @click="ctxCollectEmoji">添加到表情包</div>
       </div>
 
       <div class="input-area" ref="inputAreaEl">
