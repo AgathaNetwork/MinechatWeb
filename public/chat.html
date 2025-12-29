@@ -240,6 +240,7 @@
             <div v-if="ctxMenuVisible" @click.stop style="position:fixed;z-index:9999;background:#fff;border:1px solid #dcdfe6;border-radius:6px;padding:6px;min-width:120px"
                  :style="{ left: ctxMenuX + 'px', top: ctxMenuY + 'px' }">
               <div v-if="canCopyText(ctxMenuMsg)" style="cursor:pointer;padding:6px 10px" @click="ctxCopy">复制</div>
+              <div v-if="!isGlobalChat && canMentionFromMessage(ctxMenuMsg)" style="cursor:pointer;padding:6px 10px" @click="ctxMention">@TA</div>
               <div v-if="!isGlobalChat" style="cursor:pointer;padding:6px 10px" @click="ctxReply">回复</div>
               <div v-if="!isGlobalChat && canRecallMessage(ctxMenuMsg)" style="cursor:pointer;padding:6px 10px" @click="ctxRecall">撤回</div>
               <div v-if="!isGlobalChat && canCollectEmoji(ctxMenuMsg)" style="cursor:pointer;padding:6px 10px" @click="ctxCollectEmoji">添加到表情包</div>
@@ -262,6 +263,21 @@
               </div>
               <el-input v-model="msgInput" placeholder="输入消息" @keyup.enter="sendText"></el-input>
               <el-button type="primary" @click="sendText">发送</el-button>
+
+              <div v-if="mentionPanelVisible" @click.stop style="position:absolute;left:0;bottom:46px;width:320px;max-height:240px;overflow:auto;background:#fff;border:1px solid #ddd;padding:8px;box-shadow:0 4px 12px rgba(0,0,0,0.08);border-radius:8px">
+                <div style="font-size:12px;color:#666;margin-bottom:6px">选择要 @ 的玩家</div>
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <el-button
+                    v-for="u in mentionOptions"
+                    :key="u.id"
+                    text
+                    size="small"
+                    style="justify-content:flex-start"
+                    @click="selectMention(u)"
+                  >{{ u.label }}<span v-if="u.mc" style="margin-left:6px;color:#999">({{ u.mc }})</span></el-button>
+                  <div v-if="!mentionOptions || mentionOptions.length===0" style="font-size:12px;color:#999;padding:6px 2px">没有可选成员</div>
+                </div>
+              </div>
 
               <div v-if="emojiPanelVisible" @click.stop style="position:absolute;left:0;bottom:46px;width:320px;max-height:320px;overflow:auto;background:#fff;border:1px solid #ddd;padding:8px;box-shadow:0 4px 12px rgba(0,0,0,0.08);border-radius:8px">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">

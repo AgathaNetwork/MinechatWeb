@@ -172,6 +172,103 @@ const app = createApp({
     const ctxMenuY = ref(0);
     const ctxMenuMsg = ref(null);
 
+    const mentionPanelVisible = ref(false);
+    const mentionQuery = ref('');
+    const pendingMentions = ref([]); // [{ userId, label }]
+
+    const mentionOptions = computed(() => {
+      try {
+        if (isGlobalChat.value) return [];
+        if (!isGroupChat.value) return [];
+        const sid = selfUserId.value ? String(selfUserId.value) : '';
+        const q = String(mentionQuery.value || '').trim().toLowerCase();
+        const ids = (groupMembers.value || []).map(String).filter((id) => id && id !== sid);
+        const list = ids.map((id) => {
+          const label = userLabel(id);
+          const mc = userMinecraftId(id);
+          return { id, label, mc };
+        });
+        const filtered = q
+          ? list.filter((u) => {
+              const a = String(u.label || '').toLowerCase();
+              const b = String(u.mc || '').toLowerCase();
+              return a.includes(q) || b.includes(q) || String(u.id).includes(q);
+            })
+          : list;
+        return filtered.slice(0, 30);
+      } catch (e) {
+        return [];
+      }
+    });
+
+    function parseTailMentionQuery(text) {
+      try {
+        const s = String(text || '');
+        const m = s.match(/(^|\s)@([^\s@]*)$/);
+        if (!m) return null;
+        return { prefix: m[1] || '', query: m[2] || '' };
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function refreshMentionPanel() {
+      try {
+        if (isGlobalChat.value || !isGroupChat.value) {
+          mentionPanelVisible.value = false;
+          mentionQuery.value = '';
+          return;
+        }
+        const hit = parseTailMentionQuery(msgInput.value);
+        if (!hit) {
+          mentionPanelVisible.value = false;
+          mentionQuery.value = '';
+          return;
+        }
+        mentionQuery.value = hit.query;
+        // Avoid overlapping with emoji panel.
+        try { emojiPanelVisible.value = false; } catch (e2) {}
+        mentionPanelVisible.value = true;
+      } catch (e) {
+        mentionPanelVisible.value = false;
+        mentionQuery.value = '';
+      }
+    }
+
+    function insertMention(userId, label) {
+      try {
+        if (isGlobalChat.value || !isGroupChat.value) return;
+        const id = userId !== undefined && userId !== null ? String(userId) : '';
+        if (!id) return;
+        const name = String(label || userLabel(id) || '未知玩家');
+
+        const hit = parseTailMentionQuery(msgInput.value);
+        if (hit) {
+          msgInput.value = String(msgInput.value || '').replace(/(^|\s)@([^\s@]*)$/, `${hit.prefix}@${name} `);
+        } else {
+          const base = String(msgInput.value || '');
+          const sep = base && !/\s$/.test(base) ? ' ' : '';
+          msgInput.value = base + sep + `@${name} `;
+        }
+
+        const list = Array.isArray(pendingMentions.value) ? pendingMentions.value.slice() : [];
+        const idx = list.findIndex((x) => x && String(x.userId) === id);
+        if (idx >= 0) list[idx] = { userId: id, label: name };
+        else list.push({ userId: id, label: name });
+        pendingMentions.value = list;
+
+        mentionPanelVisible.value = false;
+        mentionQuery.value = '';
+      } catch (e) {}
+    }
+
+    function selectMention(u) {
+      try {
+        if (!u) return;
+        insertMention(u.id, u.label);
+      } catch (e) {}
+    }
+
     function normalizeFaceUrl(raw) {
       try {
         const u = String(raw || '').trim();
@@ -1518,6 +1615,34 @@ const app = createApp({
       }
     }
 
+    function canMentionFromMessage(m) {
+      try {
+        if (isGlobalChat.value) return false;
+        if (!isGroupChat.value) return false;
+        if (!m || typeof m !== 'object') return false;
+        const from = m.from_user || m.fromUser || m.from || '';
+        if (!from) return false;
+        if (selfUserId.value && String(from) === String(selfUserId.value)) return false;
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function ctxMention() {
+      try {
+        const m = ctxMenuMsg.value;
+        if (!canMentionFromMessage(m)) return;
+        const from = m.from_user || m.fromUser || m.from;
+        const id = String(from);
+        const label = messageAuthorName(m) || userLabel(id) || '未知玩家';
+        hideContextMenu();
+        insertMention(id, label);
+      } catch (e) {
+        try { hideContextMenu(); } catch (e2) {}
+      }
+    }
+
     function canCollectEmoji(m) {
       try {
         if (!m || typeof m !== 'object') return false;
@@ -1996,6 +2121,20 @@ const app = createApp({
       const text = (msgInput.value || '').trim();
       if (!text || !currentChatId.value) return;
 
+      // Snapshot mentions (group chat only)
+      let mentionIds = [];
+      try {
+        if (!isGlobalChat.value && isGroupChat.value) {
+          const list = Array.isArray(pendingMentions.value) ? pendingMentions.value : [];
+          mentionIds = list
+            .filter((x) => x && x.userId && x.label && text.includes(`@${String(x.label)}`))
+            .map((x) => String(x.userId));
+          mentionIds = Array.from(new Set(mentionIds));
+        }
+      } catch (e) {
+        mentionIds = [];
+      }
+
       // Some browsers/WebViews change zoom during input; force restore to 1x.
       restoreViewportScale();
 
@@ -2003,7 +2142,10 @@ const app = createApp({
       const optimisticMsg = {
         id: tempId,
         type: 'text',
-        content: { text },
+        content:
+          !isGlobalChat.value && isGroupChat.value && mentionIds.length > 0
+            ? { text, mentions: mentionIds.map((id) => ({ userId: id })) }
+            : { text },
         from_user: selfUserId.value,
         created_at: new Date().toISOString(),
         __status: 'sending',
@@ -2016,6 +2158,9 @@ const app = createApp({
       msgById[tempId] = optimisticMsg;
       messages.value.push(optimisticMsg);
       msgInput.value = '';
+      pendingMentions.value = [];
+      mentionPanelVisible.value = false;
+      mentionQuery.value = '';
       clearReplyTarget();
 
       restoreViewportScale();
@@ -2031,7 +2176,12 @@ const app = createApp({
           ? `${apiBase.value}/global/messages`
           : `${apiBase.value}/chats/${encodeURIComponent(currentChatId.value)}/messages`;
 
-        const body = isGlobal ? { content: text } : { type: 'text', content: text };
+        const body = isGlobal
+          ? { content: text }
+          : {
+              type: 'text',
+              content: mentionIds.length > 0 ? { text, mentions: mentionIds.map((id) => ({ userId: id })) } : text,
+            };
         if (!isGlobal && optimisticMsg.replied_to) body.repliedTo = optimisticMsg.replied_to;
 
         const res = await safeFetch(url, {
@@ -2052,6 +2202,18 @@ const app = createApp({
         restoreViewportScale();
       }
     }
+
+    // Mention panel reacts to input tail "@..." in group chats.
+    try {
+      watch(msgInput, () => {
+        refreshMentionPanel();
+      });
+      watch([currentChatId, isGroupChat], () => {
+        mentionPanelVisible.value = false;
+        mentionQuery.value = '';
+        pendingMentions.value = [];
+      });
+    } catch (e) {}
 
     function openFilePicker() {
       if (isGlobalChat.value) return;
@@ -2292,6 +2454,7 @@ const app = createApp({
       ctxMenuMsg,
       canCollectEmoji,
       canCopyText,
+      canMentionFromMessage,
       ctxCollectEmoji,
       messageAuthorName,
       messageAuthorFaceUrl,
@@ -2318,6 +2481,7 @@ const app = createApp({
       onTouchEnd,
       ctxReply,
       ctxCopy,
+      ctxMention,
       canRecallMessage,
       ctxRecall,
       setReplyTarget,
@@ -2340,6 +2504,9 @@ const app = createApp({
       goBack,
       goEmojiManage,
       onMessagesScroll,
+      mentionPanelVisible,
+      mentionOptions,
+      selectMention,
     };
   },
 });
