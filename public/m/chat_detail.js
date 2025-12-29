@@ -1140,6 +1140,28 @@ const app = createApp({
       }
     }
 
+    function scrollMessagesToBottom() {
+      try {
+        const el = messagesEl.value;
+        if (!el) return;
+        const doScroll = () => {
+          try {
+            const top = el.scrollHeight;
+            if (typeof el.scrollTo === 'function') {
+              el.scrollTo({ top, behavior: 'auto' });
+            } else {
+              el.scrollTop = top;
+            }
+          } catch (e) {}
+        };
+
+        // iOS/WebView sometimes needs multiple layout frames before scrollHeight is stable.
+        doScroll();
+        requestAnimationFrame(() => doScroll());
+        setTimeout(() => doScroll(), 60);
+      } catch (e) {}
+    }
+
     async function openChat(id) {
       chatLoading.value = true;
       currentChatId.value = id;
@@ -1203,9 +1225,7 @@ const app = createApp({
         noMoreBefore.value = !Array.isArray(msgs) || msgs.length < INITIAL_LIMIT;
 
         await nextTick();
-        if (messagesEl.value) {
-          messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
-        }
+        scrollMessagesToBottom();
 
         connectSocket();
         joinSocketRoom(id);
@@ -1214,6 +1234,8 @@ const app = createApp({
         ElementPlus.ElMessage.error('无法打开会话');
       } finally {
         chatLoading.value = false;
+        await nextTick();
+        scrollMessagesToBottom();
       }
     }
 
