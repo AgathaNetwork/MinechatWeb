@@ -26,6 +26,8 @@
       .time-divider{display:flex;align-items:center;justify-content:center;margin:10px 0;color:#999;font-size:12px;user-select:none}
       .time-divider:before,.time-divider:after{content:'';flex:1;border-top:1px solid #e6e6e6}
       .time-divider-text{padding:0 10px;white-space:nowrap;background:#f5f5f5}
+      .img-preview-mask{position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px}
+      .img-preview-img{max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;background:#fff;touch-action:none;user-select:none;transform-origin:0 0}
       .ctx-menu{position:fixed;z-index:9999;background:#fff;border:1px solid #dcdfe6;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,0.1);min-width:140px;overflow:hidden}
       .ctx-menu-item{padding:12px 16px;cursor:pointer;border-bottom:1px solid #f0f0f0;font-size:15px}
       .ctx-menu-item:last-child{border-bottom:none}
@@ -45,6 +47,18 @@
       </div>
 
       <div class="messages-area" ref="messagesEl" @scroll="onMessagesScroll">
+        <div v-if="imagePreviewVisible" class="img-preview-mask" @click="requestCloseImagePreview" @touchstart="onMaskTouchStart" @touchmove="onMaskTouchMove" @touchend="onMaskTouchEnd" @touchcancel="onMaskTouchEnd">
+          <img
+            :src="imagePreviewUrl"
+            class="img-preview-img"
+            :style="imagePreviewStyle"
+            @click.stop="requestCloseImagePreview"
+            @touchstart.stop.prevent="onImagePreviewTouchStart"
+            @touchmove.stop.prevent="onImagePreviewTouchMove"
+            @touchend.stop="onImagePreviewTouchEnd"
+            @touchcancel.stop="onImagePreviewTouchEnd"
+          />
+        </div>
         <div v-if="chatLoading" style="display:flex;align-items:center;justify-content:center;padding:40px">
           <div style="text-align:center">
             <div class="loading-spinner"></div>
@@ -75,10 +89,10 @@
 
             <div class="msg-bubble" :style="{ background: bubbleBackground(m) }">
               <template v-if="m.type==='emoji' && m.content && m.content.url">
-                <img :src="m.content.url" alt="emoji" style="max-height:96px;display:block" />
+                <img :src="m.content.url" alt="emoji" style="max-height:96px;display:block;cursor:pointer" @click.stop="openImagePreview(m.content.url)" />
               </template>
               <template v-else-if="m.type==='file' && m.content && isImageFile(m)">
-                <img :src="fileDisplayUrl(m)" :alt="m.content.filename || 'image'" style="max-width:100%;max-height:200px;display:block;border-radius:6px" />
+                <img :src="fileDisplayUrl(m)" :alt="m.content.filename || 'image'" style="max-width:100%;max-height:200px;display:block;border-radius:6px;cursor:pointer" @click.stop="openImagePreview(fileDisplayUrl(m))" />
               </template>
               <template v-else-if="m.type==='file' && m.content && isVideoFile(m)">
                 <video :src="fileDisplayUrl(m)" controls style="max-width:100%;max-height:240px;display:block;border-radius:8px"></video>

@@ -38,6 +38,19 @@ const app = createApp({
 
     const msgInput = ref('');
 
+    const imagePreviewVisible = ref(false);
+    const imagePreviewUrl = ref('');
+    const imagePreviewScale = ref(1);
+    const imagePreviewX = ref(0);
+    const imagePreviewY = ref(0);
+    const imagePreviewDragging = ref(false);
+    const imagePreviewMoved = ref(false);
+
+    let imgDragStartX = 0;
+    let imgDragStartY = 0;
+    let imgDragOriginX = 0;
+    let imgDragOriginY = 0;
+
     const selfUserId = ref(null);
 
     const fileInputEl = ref(null);
@@ -936,6 +949,135 @@ const app = createApp({
       } catch (e) {}
     }
 
+    function openImagePreview(url) {
+      try {
+        const u = String(url || '').trim();
+        if (!u) return;
+        imagePreviewUrl.value = u;
+        imagePreviewVisible.value = true;
+        imagePreviewScale.value = 1;
+        imagePreviewX.value = 0;
+        imagePreviewY.value = 0;
+        imagePreviewDragging.value = false;
+        imagePreviewMoved.value = false;
+      } catch (e) {}
+    }
+
+    function closeImagePreview() {
+      try {
+        imagePreviewVisible.value = false;
+        imagePreviewUrl.value = '';
+        imagePreviewScale.value = 1;
+        imagePreviewX.value = 0;
+        imagePreviewY.value = 0;
+        imagePreviewDragging.value = false;
+        imagePreviewMoved.value = false;
+      } catch (e) {}
+    }
+
+    function requestCloseImagePreview() {
+      try {
+        if (imagePreviewDragging.value) return;
+        if (imagePreviewMoved.value) {
+          imagePreviewMoved.value = false;
+          return;
+        }
+        closeImagePreview();
+      } catch (e) {}
+    }
+
+    function clampImageScale(s) {
+      const v = Number(s);
+      if (!Number.isFinite(v)) return 1;
+      return Math.min(5, Math.max(1, v));
+    }
+
+    function resetImagePreviewTransform() {
+      imagePreviewScale.value = 1;
+      imagePreviewX.value = 0;
+      imagePreviewY.value = 0;
+      imagePreviewDragging.value = false;
+      imagePreviewMoved.value = false;
+    }
+
+    const imagePreviewStyle = computed(() => {
+      const x = Number(imagePreviewX.value) || 0;
+      const y = Number(imagePreviewY.value) || 0;
+      const s = Number(imagePreviewScale.value) || 1;
+      return {
+        transform: `translate(${x}px, ${y}px) scale(${s})`,
+      };
+    });
+
+    function onImagePreviewToggle() {
+      try {
+        closeImagePreview();
+      } catch (e) {}
+    }
+
+    function onImagePreviewWheel(ev) {
+      try {
+        if (!ev) return;
+        const target = ev.currentTarget || ev.target;
+        if (!target || !target.getBoundingClientRect) return;
+
+        const rect = target.getBoundingClientRect();
+        const cx = Number(ev.clientX) || 0;
+        const cy = Number(ev.clientY) || 0;
+
+        const oldScale = Number(imagePreviewScale.value) || 1;
+        const delta = ev.deltaY;
+        const factor = delta < 0 ? 1.1 : 0.9;
+        const newScale = clampImageScale(oldScale * factor);
+        if (newScale === oldScale) return;
+
+        // With transform-origin: 0 0 and transform: translate(x,y) scale(s)
+        // rect.left/top corresponds to the transformed origin (L0 + x, T0 + y).
+        const px = cx - rect.left;
+        const py = cy - rect.top;
+
+        const curX = Number(imagePreviewX.value) || 0;
+        const curY = Number(imagePreviewY.value) || 0;
+        imagePreviewX.value = curX + px * (1 - newScale / oldScale);
+        imagePreviewY.value = curY + py * (1 - newScale / oldScale);
+        imagePreviewScale.value = newScale;
+
+        if (newScale === 1) {
+          imagePreviewX.value = 0;
+          imagePreviewY.value = 0;
+        }
+      } catch (e) {}
+    }
+
+    function onImagePreviewMouseDown(ev) {
+      try {
+        if (!ev) return;
+        imagePreviewDragging.value = true;
+        imgDragStartX = ev.clientX;
+        imgDragStartY = ev.clientY;
+        imgDragOriginX = Number(imagePreviewX.value) || 0;
+        imgDragOriginY = Number(imagePreviewY.value) || 0;
+      } catch (e) {}
+    }
+
+    function onImagePreviewMouseMove(ev) {
+      try {
+        if (!imagePreviewDragging.value) return;
+        if (!ev) return;
+        const dx = ev.clientX - imgDragStartX;
+        const dy = ev.clientY - imgDragStartY;
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) imagePreviewMoved.value = true;
+        imagePreviewX.value = imgDragOriginX + dx;
+        imagePreviewY.value = imgDragOriginY + dy;
+      } catch (e) {}
+    }
+
+    function onImagePreviewMouseUp() {
+      try {
+        imagePreviewDragging.value = false;
+      } catch (e) {}
+    }
+
     function setReplyTarget(m) {
       if (isGlobalChat.value) return;
       replyTarget.value = m;
@@ -1478,6 +1620,12 @@ const app = createApp({
         await loadChats();
       }
 
+      // Image preview drag handlers
+      try {
+        window.addEventListener('mousemove', onImagePreviewMouseMove);
+        window.addEventListener('mouseup', onImagePreviewMouseUp);
+      } catch (e) {}
+
       // click outside closes emoji panel / ctx menu
       document.addEventListener('click', (ev) => {
         try {
@@ -1503,6 +1651,10 @@ const app = createApp({
       selfFaceUrl,
       messages,
       msgInput,
+      imagePreviewVisible,
+      imagePreviewUrl,
+      imagePreviewDragging,
+      imagePreviewStyle,
       replyTarget,
       replyPreview,
       emojiPanelVisible,
@@ -1535,6 +1687,12 @@ const app = createApp({
       isImageFile,
       isVideoFile,
       fileDisplayUrl,
+      openImagePreview,
+      closeImagePreview,
+      requestCloseImagePreview,
+      onImagePreviewToggle,
+      onImagePreviewWheel,
+      onImagePreviewMouseDown,
 
       // actions
       openLoginPopup,

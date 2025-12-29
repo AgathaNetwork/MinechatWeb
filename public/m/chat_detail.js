@@ -18,6 +18,36 @@ const app = createApp({
     const inputAreaEl = ref(null);
 
     const msgInput = ref('');
+    const imagePreviewVisible = ref(false);
+    const imagePreviewUrl = ref('');
+    const imagePreviewScale = ref(1);
+    const imagePreviewX = ref(0);
+    const imagePreviewY = ref(0);
+    const imagePreviewMoved = ref(false);
+
+    let imgDragActive = false;
+    let imgDragStartX = 0;
+    let imgDragStartY = 0;
+    let imgDragOriginX = 0;
+    let imgDragOriginY = 0;
+
+    let imgPinchActive = false;
+    let imgPinchStartDist = 0;
+    let imgPinchStartScale = 1;
+    let imgPinchStartCenterX = 0;
+    let imgPinchStartCenterY = 0;
+    let imgPinchOriginX = 0;
+    let imgPinchOriginY = 0;
+    let imgPinchLastCenterX = 0;
+    let imgPinchLastCenterY = 0;
+
+    let imgTapCandidate = false;
+    let imgTapStartX = 0;
+    let imgTapStartY = 0;
+
+    let maskTapCandidate = false;
+    let maskTapStartX = 0;
+    let maskTapStartY = 0;
     const messagesEl = ref(null);
     const chatLoading = ref(false);
 
@@ -562,6 +592,241 @@ const app = createApp({
       }
     }
 
+    function openImagePreview(url) {
+      try {
+        const u = String(url || '').trim();
+        if (!u) return;
+        imagePreviewUrl.value = u;
+        imagePreviewVisible.value = true;
+        imagePreviewScale.value = 1;
+        imagePreviewX.value = 0;
+        imagePreviewY.value = 0;
+        imagePreviewMoved.value = false;
+      } catch (e) {}
+    }
+
+    function closeImagePreview() {
+      try {
+        imagePreviewVisible.value = false;
+        imagePreviewUrl.value = '';
+        imagePreviewScale.value = 1;
+        imagePreviewX.value = 0;
+        imagePreviewY.value = 0;
+        imagePreviewMoved.value = false;
+      } catch (e) {}
+    }
+
+    function requestCloseImagePreview() {
+      try {
+        // 防止拖动/捏合结束后产生的合成 click 误触关闭
+        if (imgDragActive || imgPinchActive) return;
+        if (imagePreviewMoved.value) {
+          imagePreviewMoved.value = false;
+          return;
+        }
+        closeImagePreview();
+      } catch (e) {}
+    }
+
+    function clampImageScale(s) {
+      const v = Number(s);
+      if (!Number.isFinite(v)) return 1;
+      return Math.min(5, Math.max(1, v));
+    }
+
+    function resetImagePreviewTransform() {
+      imagePreviewScale.value = 1;
+      imagePreviewX.value = 0;
+      imagePreviewY.value = 0;
+      imagePreviewMoved.value = false;
+    }
+
+    const imagePreviewStyle = computed(() => {
+      const x = Number(imagePreviewX.value) || 0;
+      const y = Number(imagePreviewY.value) || 0;
+      const s = Number(imagePreviewScale.value) || 1;
+      return {
+        transform: `translate(${x}px, ${y}px) scale(${s})`,
+      };
+    });
+
+    function onImagePreviewToggle() {
+      try {
+        closeImagePreview();
+      } catch (e) {}
+    }
+
+    function touchPoint(t) {
+      return { x: Number(t && t.clientX) || 0, y: Number(t && t.clientY) || 0 };
+    }
+
+    function touchDistance(t1, t2) {
+      const a = touchPoint(t1);
+      const b = touchPoint(t2);
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function touchCenter(t1, t2) {
+      const a = touchPoint(t1);
+      const b = touchPoint(t2);
+      return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    }
+
+    function onImagePreviewTouchStart(ev) {
+      try {
+        const touches = ev && ev.touches ? ev.touches : [];
+        if (touches.length === 2) {
+          imgTapCandidate = false;
+          imgPinchActive = true;
+          imgDragActive = false;
+          imgPinchStartDist = touchDistance(touches[0], touches[1]) || 1;
+          imgPinchStartScale = Number(imagePreviewScale.value) || 1;
+          const c = touchCenter(touches[0], touches[1]);
+          imgPinchStartCenterX = c.x;
+          imgPinchStartCenterY = c.y;
+          imgPinchLastCenterX = c.x;
+          imgPinchLastCenterY = c.y;
+          imgPinchOriginX = Number(imagePreviewX.value) || 0;
+          imgPinchOriginY = Number(imagePreviewY.value) || 0;
+          return;
+        }
+        if (touches.length === 1) {
+          imgTapCandidate = true;
+          imgTapStartX = Number(touches[0].clientX) || 0;
+          imgTapStartY = Number(touches[0].clientY) || 0;
+
+          imgDragActive = true;
+          imgPinchActive = false;
+          imgDragStartX = Number(touches[0].clientX) || 0;
+          imgDragStartY = Number(touches[0].clientY) || 0;
+          imgDragOriginX = Number(imagePreviewX.value) || 0;
+          imgDragOriginY = Number(imagePreviewY.value) || 0;
+        }
+      } catch (e) {}
+    }
+
+    function onImagePreviewTouchMove(ev) {
+      try {
+        const touches = ev && ev.touches ? ev.touches : [];
+        if (imgPinchActive && touches.length === 2) {
+          const target = ev.currentTarget || ev.target;
+          const rect = target && target.getBoundingClientRect ? target.getBoundingClientRect() : null;
+          const c = touchCenter(touches[0], touches[1]);
+
+          // Pan following the moving pinch center.
+          const panDx = c.x - imgPinchLastCenterX;
+          const panDy = c.y - imgPinchLastCenterY;
+          imgPinchLastCenterX = c.x;
+          imgPinchLastCenterY = c.y;
+          if (Math.abs(panDx) > 1 || Math.abs(panDy) > 1) imagePreviewMoved.value = true;
+
+          const dist = touchDistance(touches[0], touches[1]) || 1;
+          const desiredScale = clampImageScale(imgPinchStartScale * (dist / imgPinchStartDist));
+          const oldScale = Number(imagePreviewScale.value) || 1;
+
+          if (Math.abs(desiredScale - oldScale) > 0.01) imagePreviewMoved.value = true;
+
+          // First: scale around current two-finger center.
+          if (rect && desiredScale !== oldScale) {
+            const px = c.x - rect.left;
+            const py = c.y - rect.top;
+            const curX = Number(imagePreviewX.value) || 0;
+            const curY = Number(imagePreviewY.value) || 0;
+            imagePreviewX.value = curX + px * (1 - desiredScale / oldScale);
+            imagePreviewY.value = curY + py * (1 - desiredScale / oldScale);
+            imagePreviewScale.value = desiredScale;
+          } else if (!rect) {
+            imagePreviewScale.value = desiredScale;
+          }
+
+          // Then: apply pan.
+          imagePreviewX.value = (Number(imagePreviewX.value) || 0) + panDx;
+          imagePreviewY.value = (Number(imagePreviewY.value) || 0) + panDy;
+
+          if (desiredScale === 1) {
+            imagePreviewX.value = 0;
+            imagePreviewY.value = 0;
+          }
+
+          return;
+        }
+
+        if (imgDragActive && touches.length === 1) {
+          const x = Number(touches[0].clientX) || 0;
+          const y = Number(touches[0].clientY) || 0;
+
+          if (imgTapCandidate) {
+            const mdx = x - imgTapStartX;
+            const mdy = y - imgTapStartY;
+            if (Math.abs(mdx) > 8 || Math.abs(mdy) > 8) imgTapCandidate = false;
+          }
+
+          const dx = x - imgDragStartX;
+          const dy = y - imgDragStartY;
+          if (Math.abs(dx) > 2 || Math.abs(dy) > 2) imagePreviewMoved.value = true;
+          imagePreviewX.value = imgDragOriginX + dx;
+          imagePreviewY.value = imgDragOriginY + dy;
+        }
+      } catch (e) {}
+    }
+
+    function onImagePreviewTouchEnd(ev) {
+      try {
+        const touches = ev && ev.touches ? ev.touches : [];
+        if (touches.length === 0) {
+          if (imgTapCandidate) {
+            imgTapCandidate = false;
+            imgDragActive = false;
+            imgPinchActive = false;
+            closeImagePreview();
+            return;
+          }
+          imgTapCandidate = false;
+          imgDragActive = false;
+          imgPinchActive = false;
+        }
+        if (touches.length === 1) {
+          imgPinchActive = false;
+          imgDragActive = true;
+          imgDragStartX = Number(touches[0].clientX) || 0;
+          imgDragStartY = Number(touches[0].clientY) || 0;
+          imgDragOriginX = Number(imagePreviewX.value) || 0;
+          imgDragOriginY = Number(imagePreviewY.value) || 0;
+        }
+      } catch (e) {}
+    }
+
+    function onMaskTouchStart(ev) {
+      try {
+        const t = ev && ev.touches && ev.touches[0] ? ev.touches[0] : null;
+        maskTapCandidate = true;
+        maskTapStartX = Number(t && t.clientX) || 0;
+        maskTapStartY = Number(t && t.clientY) || 0;
+      } catch (e) {}
+    }
+
+    function onMaskTouchMove(ev) {
+      try {
+        if (!maskTapCandidate) return;
+        const t = ev && ev.touches && ev.touches[0] ? ev.touches[0] : null;
+        const x = Number(t && t.clientX) || 0;
+        const y = Number(t && t.clientY) || 0;
+        if (Math.abs(x - maskTapStartX) > 8 || Math.abs(y - maskTapStartY) > 8) {
+          maskTapCandidate = false;
+        }
+      } catch (e) {}
+    }
+
+    function onMaskTouchEnd() {
+      try {
+        if (!maskTapCandidate) return;
+        maskTapCandidate = false;
+        requestCloseImagePreview();
+      } catch (e) {}
+    }
+
     function hideContextMenu() {
       ctxMenuVisible.value = false;
       ctxMenuMsg.value = null;
@@ -1052,6 +1317,9 @@ const app = createApp({
       currentChatFaceUrl,
       messages,
       msgInput,
+      imagePreviewVisible,
+      imagePreviewUrl,
+      imagePreviewStyle,
       fileInputEl,
       inputAreaEl,
       messagesEl,
@@ -1092,6 +1360,16 @@ const app = createApp({
       clearReplyTarget,
       toggleEmojiPanel,
       sendEmoji,
+      openImagePreview,
+      closeImagePreview,
+      requestCloseImagePreview,
+      onImagePreviewToggle,
+      onImagePreviewTouchStart,
+      onImagePreviewTouchMove,
+      onImagePreviewTouchEnd,
+      onMaskTouchStart,
+      onMaskTouchMove,
+      onMaskTouchEnd,
       goBack,
       goEmojiManage,
       onMessagesScroll,
