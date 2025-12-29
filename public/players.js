@@ -134,7 +134,17 @@ createApp({
           }
         }
 
-        users.value = Array.isArray(raw) ? raw.map(u => Object.assign({}, u, { mcUuid: extractMinecraftUuid(u) })) : [];
+        function extractFaceUrl(obj){
+          try{
+            if(!obj || typeof obj !== 'object') return '';
+            const face = obj.faceUrl || obj.face_url || obj.face || obj.face_key || '';
+            return face ? String(face) : '';
+          }catch(e){
+            return '';
+          }
+        }
+
+        users.value = Array.isArray(raw) ? raw.map(u => Object.assign({}, u, { mcUuid: extractMinecraftUuid(u), faceUrl: extractFaceUrl(u) })) : [];
         filtered.value = users.value.slice();
 
         // update self avatar after list is ready

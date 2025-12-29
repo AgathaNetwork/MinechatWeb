@@ -20,6 +20,7 @@ const app = createApp({
     const msgById = reactive({});
     const userNameCache = reactive({});
     const userFaceCache = reactive({});
+    const userMinecraftCache = reactive({});
 
     const selfFaceUrl = ref('');
     const usersIndexLoaded = ref(false);
@@ -120,9 +121,19 @@ const app = createApp({
       try {
         const id = userId !== undefined && userId !== null ? String(userId) : '';
         if (!id) return '';
-        return userNameCache[id] || id;
+        return userNameCache[id] || '未知玩家';
       } catch (e) {
-        return String(userId || '');
+        return '未知玩家';
+      }
+    }
+
+    function userMinecraftId(userId) {
+      try {
+        const id = userId !== undefined && userId !== null ? String(userId) : '';
+        if (!id) return '';
+        return userMinecraftCache[id] ? String(userMinecraftCache[id]) : '';
+      } catch (e) {
+        return '';
       }
     }
 
@@ -131,7 +142,7 @@ const app = createApp({
       return (allUsersList.value || [])
         .map((u) => ({
           id: String(u.id),
-          label: (u.username || u.displayName || u.name || userNameCache[String(u.id)] || String(u.id)) + ` (${String(u.id)})`,
+          label: u.username || u.displayName || u.name || userNameCache[String(u.id)] || '未知玩家',
         }))
         .filter((u) => !members.has(String(u.id)));
     });
@@ -142,7 +153,7 @@ const app = createApp({
       return (allUsersList.value || [])
         .map((u) => ({
           id: String(u.id),
-          label: (u.username || u.displayName || u.name || userNameCache[String(u.id)] || String(u.id)) + ` (${String(u.id)})`,
+          label: u.username || u.displayName || u.name || userNameCache[String(u.id)] || '未知玩家',
         }))
         .filter((u) => members.has(String(u.id)) && String(u.id) !== owner);
     });
@@ -153,7 +164,7 @@ const app = createApp({
       return (allUsersList.value || [])
         .map((u) => ({
           id: String(u.id),
-          label: (u.username || u.displayName || u.name || userNameCache[String(u.id)] || String(u.id)) + ` (${String(u.id)})`,
+          label: u.username || u.displayName || u.name || userNameCache[String(u.id)] || '未知玩家',
         }))
         .filter((u) => members.has(String(u.id)) && String(u.id) !== owner);
     });
@@ -983,7 +994,9 @@ const app = createApp({
           if (!u || typeof u !== 'object') continue;
           const id = u.id !== undefined && u.id !== null ? String(u.id) : '';
           if (!id) continue;
-          userNameCache[id] = u.username || u.displayName || userNameCache[id] || id;
+          userNameCache[id] = u.username || u.displayName || userNameCache[id] || '未知玩家';
+          const mc = u.minecraft_id || u.minecraftId || u.minecraft_uuid || u.minecraftUuid || '';
+          if (mc) userMinecraftCache[id] = String(mc);
           const face = u.faceUrl || u.face_url || u.face || u.face_key || '';
           if (face) userFaceCache[id] = face;
         }
@@ -1467,11 +1480,15 @@ const app = createApp({
             const res = await safeFetch(`${apiBase.value}/users/${encodeURIComponent(id)}`);
             if (!res.ok) throw new Error('no user');
             const u = await res.json();
-            userNameCache[id] = u.username || u.displayName || id;
+            userNameCache[id] = u.username || u.displayName || '未知玩家';
+            try {
+              const mc = u && (u.minecraft_id || u.minecraftId || u.minecraft_uuid || u.minecraftUuid) || '';
+              if (mc) userMinecraftCache[id] = String(mc);
+            } catch (e2) {}
             const face = (u && (u.faceUrl || u.face_url || u.face)) || '';
             if (face) userFaceCache[id] = face;
           } catch (e) {
-            userNameCache[id] = id;
+            userNameCache[id] = '未知玩家';
           }
         })
       );
@@ -1509,7 +1526,14 @@ const app = createApp({
     function getChatName(chat) {
       try {
         if (!chat) return '';
-        return chat.displayName || chat.name || (chat.members || []).join(',') || String(chat.id || '');
+        const t = chat.type !== undefined && chat.type !== null ? String(chat.type).toLowerCase() : '';
+        if (t === 'group') return chat.displayName || chat.name || '群聊';
+
+        if (chat.displayName) return chat.displayName;
+        const peerId = getChatPeerId(chat);
+        if (peerId && selfUserId.value && String(peerId) === String(selfUserId.value)) return '我';
+        if (peerId && userNameCache[String(peerId)] && userNameCache[String(peerId)] !== '未知玩家') return userNameCache[String(peerId)];
+        return chat.name || '会话';
       } catch (e) {
         return '';
       }
@@ -1553,7 +1577,7 @@ const app = createApp({
       const id = m && m.from_user;
       if (!id) return '';
       if (isOwnMessage(m)) return '我';
-      return userNameCache[id] || id;
+      return userNameCache[id] || '对方';
     }
 
     function isOwnMessage(m) {
@@ -2193,7 +2217,7 @@ const app = createApp({
               const otherId = members.map(String).find((mid) => String(mid) !== String(selfUserId.value));
               if (otherId) {
                 currentChatFaceUrl.value = getCachedFaceUrl(otherId);
-                if (!currentChatTitle.value) currentChatTitle.value = userNameCache[otherId] || otherId;
+                if (!currentChatTitle.value) currentChatTitle.value = userNameCache[otherId] || '对方';
               }
             }
           } catch (e) {}
@@ -2228,7 +2252,7 @@ const app = createApp({
                   if (otherId) {
                     const face = getCachedFaceUrl(otherId);
                     if (face) currentChatFaceUrl.value = face;
-                    if (!currentChatTitle.value) currentChatTitle.value = userNameCache[otherId] || otherId;
+                    if (!currentChatTitle.value) currentChatTitle.value = userNameCache[otherId] || '对方';
                   }
                 }
               } catch (e) {}
@@ -2675,6 +2699,7 @@ const app = createApp({
       adminOptions,
       transferOptions,
       userLabel,
+      userMinecraftId,
       openGroupManage,
       groupAvatarInputEl,
       openGroupAvatarPicker,

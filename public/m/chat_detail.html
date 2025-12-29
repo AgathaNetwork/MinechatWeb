@@ -222,7 +222,7 @@
                     <el-tag v-if="String(mid)===String(groupOwnerId)" type="info" effect="plain" size="small">群主</el-tag>
                     <el-tag v-else-if="groupAdmins.includes(String(mid))" type="info" effect="plain" size="small">管理员</el-tag>
                   </div>
-                  <div style="font-size:12px;color:#888">{{ mid }}</div>
+                  <div style="font-size:12px;color:#888">{{ userMinecraftId(mid) || '未绑定minecraft uuid' }}</div>
                 </div>
                 <el-button
                   v-if="groupCanManage && String(mid)!==String(groupOwnerId) && String(mid)!==String(selfUserId)"

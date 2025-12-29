@@ -122,7 +122,7 @@ const app = createApp({
           const u = await res.json().catch(() => null);
           if (!u || typeof u !== 'object') return null;
           const uid = String(u.id || id);
-          userNameCache[uid] = u.username || u.displayName || u.name || userNameCache[uid] || uid;
+          userNameCache[uid] = u.username || u.displayName || u.name || userNameCache[uid] || '未知玩家';
           const face = extractFaceUrl(u);
           if (face) userFaceCache[uid] = face;
           return u;
@@ -581,6 +581,11 @@ const app = createApp({
     function getChatName(chat) {
       if (chat.displayName) return chat.displayName;
       if (chat.name) return chat.name;
+
+      try {
+        const t = chat.type !== undefined && chat.type !== null ? String(chat.type).toLowerCase() : '';
+        if (t === 'group') return '群聊';
+      } catch (e) {}
       
       const peerId = getChatPeerId(chat);
       if (peerId && selfUserId.value && String(peerId) === String(selfUserId.value)) {
@@ -588,8 +593,7 @@ const app = createApp({
       }
       if (peerId && userNameCache[peerId]) return userNameCache[peerId];
 
-      const members = chat.members || chat.memberIds || [];
-      return members.join(',') || chat.id;
+      return '会话';
     }
 
     function getChatAvatar(chat) {

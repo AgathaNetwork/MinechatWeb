@@ -13,6 +13,7 @@ const app = createApp({
     const msgById = reactive({});
     const userNameCache = reactive({});
     const userFaceCache = reactive({});
+    const userMinecraftCache = reactive({});
     const selfUserId = ref(null);
 
     const fileInputEl = ref(null);
@@ -112,9 +113,19 @@ const app = createApp({
       try {
         const id = userId !== undefined && userId !== null ? String(userId) : '';
         if (!id) return '';
-        return userNameCache[id] || id;
+        return userNameCache[id] || '未知玩家';
       } catch (e) {
-        return String(userId || '');
+        return '未知玩家';
+      }
+    }
+
+    function userMinecraftId(userId) {
+      try {
+        const id = userId !== undefined && userId !== null ? String(userId) : '';
+        if (!id) return '';
+        return userMinecraftCache[id] ? String(userMinecraftCache[id]) : '';
+      } catch (e) {
+        return '';
       }
     }
 
@@ -123,7 +134,7 @@ const app = createApp({
       return (allUsersList.value || [])
         .map((u) => ({
           id: String(u.id),
-          label: (u.username || u.displayName || u.name || userNameCache[String(u.id)] || String(u.id)) + ` (${String(u.id)})`,
+          label: u.username || u.displayName || u.name || userNameCache[String(u.id)] || '未知玩家',
         }))
         .filter((u) => !members.has(String(u.id)));
     });
@@ -134,7 +145,7 @@ const app = createApp({
       return (allUsersList.value || [])
         .map((u) => ({
           id: String(u.id),
-          label: (u.username || u.displayName || u.name || userNameCache[String(u.id)] || String(u.id)) + ` (${String(u.id)})`,
+          label: u.username || u.displayName || u.name || userNameCache[String(u.id)] || '未知玩家',
         }))
         .filter((u) => members.has(String(u.id)) && String(u.id) !== owner);
     });
@@ -145,7 +156,7 @@ const app = createApp({
       return (allUsersList.value || [])
         .map((u) => ({
           id: String(u.id),
-          label: (u.username || u.displayName || u.name || userNameCache[String(u.id)] || String(u.id)) + ` (${String(u.id)})`,
+          label: u.username || u.displayName || u.name || userNameCache[String(u.id)] || '未知玩家',
         }))
         .filter((u) => members.has(String(u.id)) && String(u.id) !== owner);
     });
@@ -272,7 +283,9 @@ const app = createApp({
         const users = await res.json();
         users.forEach(u => {
           const id = String(u.id);
-          userNameCache[id] = u.username || u.id;
+          userNameCache[id] = u.username || u.displayName || userNameCache[id] || '未知玩家';
+          const mc = u.minecraft_id || u.minecraftId || u.minecraft_uuid || u.minecraftUuid || '';
+          if (mc) userMinecraftCache[id] = String(mc);
           const face = normalizeFaceUrl(u.faceUrl || u.face_url || u.face || u.face_key || '');
           if (face) userFaceCache[id] = face;
         });
@@ -654,7 +667,7 @@ const app = createApp({
       const from = m.from_user || m.fromUser || m.from;
       if (!from) return '';
       if (String(from) === String(selfUserId.value)) return '我';
-      return userNameCache[String(from)] || from;
+      return userNameCache[String(from)] || '对方';
     }
 
     function messageAuthorFaceUrl(m) {
@@ -1748,7 +1761,7 @@ const app = createApp({
                   if (otherId) {
                     currentChatFaceUrl.value = getCachedFaceUrl(otherId);
                     if (!currentChatTitle.value) {
-                      currentChatTitle.value = userNameCache[otherId] || otherId;
+                      currentChatTitle.value = userNameCache[otherId] || '对方';
                     }
                   }
                 }
@@ -2127,6 +2140,7 @@ const app = createApp({
       transferGroupOwner,
       dissolveGroupChat,
       userLabel,
+      userMinecraftId,
       selfUserId,
       ctxMenuVisible,
       ctxMenuX,
