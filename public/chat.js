@@ -1657,6 +1657,18 @@ const app = createApp({
       return m.content.__localUrl || m.content.thumbnailUrl || m.content.url || '';
     }
 
+    function fileOriginalUrl(m) {
+      try {
+        if (!m || !m.content) return '';
+        // For local optimistic message, use local blob.
+        if (m.content.__localUrl) return m.content.__localUrl;
+        // Prefer original file url for preview.
+        return m.content.url || m.content.thumbnailUrl || '';
+      } catch (e) {
+        return '';
+      }
+    }
+
     function bubbleBackground(m) {
       if (!m) return '#fff';
       if (isRecalledMessage(m)) return '#f7f7f7';
@@ -2815,6 +2827,7 @@ const app = createApp({
       isImageFile,
       isVideoFile,
       fileDisplayUrl,
+      fileOriginalUrl,
       messageFilename,
       openImagePreview,
       closeImagePreview,
