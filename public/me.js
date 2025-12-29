@@ -214,9 +214,9 @@ createApp({
         if (data && typeof data === 'object') {
           const url = data.url || data.faceUrl || data.face_url || '';
           if (url) selfFaceUrl.value = String(url);
-          lastResult.value = url ? String(url) : JSON.stringify(data);
+          lastResult.value = '头像更新成功';
         } else {
-          lastResult.value = 'ok';
+          lastResult.value = '头像更新成功';
         }
         ElementPlus.ElMessage.success('已触发更新');
       } catch (e) {

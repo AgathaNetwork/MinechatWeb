@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>我</title>
+    <title>工作台</title>
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
     <style>
@@ -15,11 +15,11 @@
       <el-container style="height:100vh">
         <el-header style="display:flex;align-items:center;justify-content:space-between">
           <div style="display:flex;align-items:center;gap:16px">
-            <h2 style="margin:0">我</h2>
+            <h2 style="margin:0">工作台</h2>
             <el-menu mode="horizontal" :ellipsis="false" default-active="me" @select="onNav" style="border-bottom:none;background:transparent">
               <el-menu-item index="chat">会话</el-menu-item>
               <el-menu-item index="players">玩家</el-menu-item>
-              <el-menu-item index="me">我</el-menu-item>
+              <el-menu-item index="me">工作台</el-menu-item>
             </el-menu>
           </div>
 
@@ -39,23 +39,38 @@
               </div>
             </template>
 
-            <div style="display:flex;gap:16px;align-items:center">
-              <el-avatar shape="square" :src="selfFaceUrl || ''" :size="72">{{ selfInitial }}</el-avatar>
-              <div style="flex:1">
-                <div style="font-size:16px;font-weight:600;line-height:1.4">{{ selfDisplayName }}</div>
-                <div style="font-size:12px;color:#888;line-height:1.6">{{ selfIdHint }}</div>
-              </div>
-            </div>
+            <el-skeleton :loading="loading" animated>
+              <template #template>
+                <div style="display:flex;gap:16px;align-items:center">
+                  <el-skeleton-item variant="image" style="width:72px;height:72px;border-radius:8px"></el-skeleton-item>
+                  <div style="flex:1">
+                    <el-skeleton-item variant="text" style="width:40%"></el-skeleton-item>
+                    <el-skeleton-item variant="text" style="width:55%;margin-top:10px"></el-skeleton-item>
+                  </div>
+                </div>
+                <el-skeleton-item variant="text" style="width:100%;margin-top:14px"></el-skeleton-item>
+                <el-skeleton-item variant="text" style="width:45%;margin-top:10px"></el-skeleton-item>
+              </template>
 
-            <el-divider></el-divider>
+              <template #default>
+                <div style="display:flex;gap:16px;align-items:center">
+                  <el-avatar shape="square" :src="selfFaceUrl || ''" :size="72">{{ selfInitial }}</el-avatar>
+                  <div style="flex:1">
+                    <div style="font-size:16px;font-weight:600;line-height:1.4">{{ selfDisplayName }}</div>
+                    <div style="font-size:12px;color:#888;line-height:1.6">{{ selfIdHint }}</div>
+                  </div>
+                </div>
 
-            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-              <el-button type="primary" :loading="updating" :disabled="!isLoggedIn || updating || loading" @click="updateFace">更新头像</el-button>
-            </div>
+                <el-divider></el-divider>
+
+                <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                  <el-button plain type="primary" :loading="updating" :disabled="!isLoggedIn || updating || loading" @click="updateFace">更新头像</el-button>
+                </div>
+              </template>
+            </el-skeleton>
 
             <div style="margin-top:12px" v-if="lastResult">
               <el-alert type="success" :closable="false" show-icon title="更新成功"></el-alert>
-              <div style="margin-top:8px;font-size:12px;color:#666;word-break:break-all">{{ lastResult }}</div>
             </div>
 
             <div style="margin-top:12px" v-if="lastError">

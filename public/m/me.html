@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <title>我 - Minechat</title>
+    <title>工作台 - Minechat</title>
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
     <style>
@@ -23,27 +23,43 @@
   <body>
     <div id="app" v-cloak>
       <div class="top-bar">
-        <h3 style="margin:0">我</h3>
+        <h3 style="margin:0">工作台</h3>
         <el-button v-if="isLoggedIn" size="small" @click="logout">登出</el-button>
       </div>
 
       <div class="content-area">
         <el-card>
-          <div style="display:flex;gap:16px;align-items:center;padding:12px">
-            <el-avatar shape="square" :src="selfFaceUrl || ''" :size="64">{{ selfInitial }}</el-avatar>
-            <div style="flex:1">
-              <div style="font-size:18px;font-weight:600;margin-bottom:4px">{{ selfDisplayName }}</div>
-              <div style="font-size:13px;color:#888">{{ selfIdHint }}</div>
-            </div>
-          </div>
+          <el-skeleton :loading="loading" animated>
+            <template #template>
+              <div style="display:flex;gap:16px;align-items:center;padding:12px">
+                <el-skeleton-item variant="image" style="width:64px;height:64px;border-radius:8px"></el-skeleton-item>
+                <div style="flex:1">
+                  <el-skeleton-item variant="text" style="width:45%"></el-skeleton-item>
+                  <el-skeleton-item variant="text" style="width:60%;margin-top:10px"></el-skeleton-item>
+                </div>
+              </div>
+              <el-skeleton-item variant="text" style="width:100%;margin:0 12px"></el-skeleton-item>
+              <el-skeleton-item variant="text" style="width:40%;margin:10px 12px 12px"></el-skeleton-item>
+            </template>
 
-          <el-divider></el-divider>
+            <template #default>
+              <div style="display:flex;gap:16px;align-items:center;padding:12px">
+                <el-avatar shape="square" :src="selfFaceUrl || ''" :size="64">{{ selfInitial }}</el-avatar>
+                <div style="flex:1">
+                  <div style="font-size:18px;font-weight:600;margin-bottom:4px">{{ selfDisplayName }}</div>
+                  <div style="font-size:13px;color:#888">{{ selfIdHint }}</div>
+                </div>
+              </div>
 
-          <div style="padding:0 12px 12px">
-            <div class="action-row">
-              <el-button type="primary" :loading="updating" :disabled="!isLoggedIn || updating" @click="updateFace">更新头像</el-button>
-            </div>
-          </div>
+              <el-divider></el-divider>
+
+              <div style="padding:0 12px 12px">
+                <div class="action-row">
+                  <el-button plain type="primary" :loading="updating" :disabled="!isLoggedIn || updating || loading" @click="updateFace">更新头像</el-button>
+                </div>
+              </div>
+            </template>
+          </el-skeleton>
 
           <div v-if="lastResult" style="margin-top:12px;padding:0 12px 12px">
             <el-alert type="success" :closable="false" show-icon title="更新成功"></el-alert>
@@ -65,8 +81,8 @@
           <span>玩家</span>
         </a>
         <a href="/m/me.html" class="nav-item active">
-          <el-icon :size="20"><user-filled /></el-icon>
-          <span>我</span>
+          <el-icon :size="20"><tickets /></el-icon>
+          <span>工作台</span>
         </a>
       </div>
     </div>

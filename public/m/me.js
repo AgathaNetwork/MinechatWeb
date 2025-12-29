@@ -7,6 +7,7 @@ const app = createApp({
     const token = ref(localStorage.getItem('token') || null);
     const sessionOk = ref(false);
     const isLoggedIn = computed(() => !!tokenValue() || !!sessionOk.value);
+    const loading = ref(false);
     const selfUserId = ref('');
     const selfUsername = ref('');
     const selfFaceUrl = ref('');
@@ -115,6 +116,8 @@ const app = createApp({
     }
 
     async function loadSelf() {
+      if (loading.value) return;
+      loading.value = true;
       try {
         await checkSession();
 
@@ -161,6 +164,9 @@ const app = createApp({
           }
         }
       } catch (e) {}
+      finally {
+        loading.value = false;
+      }
     }
 
     async function updateFace() {
@@ -223,6 +229,7 @@ const app = createApp({
 
     return {
       isLoggedIn,
+      loading,
       selfDisplayName,
       selfIdHint,
       selfInitial,
