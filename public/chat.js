@@ -313,10 +313,14 @@ const app = createApp({
               const chat = (chats.value || []).find(c => c && String(c.id) === String(chatId));
               if (chat) {
                 chat.lastMessage = msg;
+                const fromUser = msg && (msg.from_user || msg.fromUser || msg.from);
+                const isSelfMsg = !!(selfUserId.value && fromUser && String(fromUser) === String(selfUserId.value));
                 // 如果不是当前打开的会话，标记为未读
                 if (!current || String(chatId) !== String(current)) {
-                  chatUnreadMap[chatId] = true;
+                  if (!isSelfMsg) chatUnreadMap[chatId] = true;
                 }
+
+                resortChats();
               }
             }
             
@@ -430,6 +434,60 @@ const app = createApp({
 
     function hasUnread(chatId) {
       return !!chatUnreadMap[chatId];
+    }
+
+    function parseAnyTimeToMs(v) {
+      try {
+        if (v === undefined || v === null || v === '') return 0;
+        if (typeof v === 'number') {
+          const ms = v < 1e12 ? v * 1000 : v;
+          return Number.isFinite(ms) ? ms : 0;
+        }
+        const s = String(v);
+        if (!s) return 0;
+        if (/^\d+$/.test(s)) {
+          const num = Number(s);
+          const ms = num < 1e12 ? num * 1000 : num;
+          return Number.isFinite(ms) ? ms : 0;
+        }
+        const d = new Date(s);
+        const ms = d.getTime();
+        return Number.isFinite(ms) ? ms : 0;
+      } catch (e) {
+        return 0;
+      }
+    }
+
+    function chatLastActivityMs(chat) {
+      try {
+        if (!chat || typeof chat !== 'object') return 0;
+        const lm = chat.lastMessage;
+        const d = parseMessageTime(lm);
+        if (d) return d.getTime();
+        const v =
+          chat.updatedAt ??
+          chat.updated_at ??
+          chat.lastActiveAt ??
+          chat.last_active_at ??
+          chat.createdAt ??
+          chat.created_at;
+        return parseAnyTimeToMs(v);
+      } catch (e) {
+        return 0;
+      }
+    }
+
+    function sortChatsList(list) {
+      const arr = Array.isArray(list) ? list.slice() : [];
+      const filtered = arr.filter((c) => c && String(c.id) !== 'global');
+      filtered.sort((a, b) => chatLastActivityMs(b) - chatLastActivityMs(a));
+      return filtered;
+    }
+
+    function resortChats() {
+      try {
+        chats.value = sortChatsList(chats.value);
+      } catch (e) {}
     }
 
     async function loadUsersIndex() {
@@ -735,14 +793,55 @@ const app = createApp({
       return '#fff';
     }
 
+    function previewFromStructuredContent(content) {
+      try {
+        if (!content || typeof content !== 'object') return '';
+
+        // Most common: { text: "..." }
+        if (content.text !== undefined && content.text !== null) {
+          const t = String(content.text);
+          return t;
+        }
+
+        // Emoji-like payloads
+        if (content.packId || content.pack_id) return '[表情]';
+
+        // Some backends may wrap images as { key: "image/..." }
+        if (content.key && /^image\//i.test(String(content.key))) return '[表情]';
+
+        // File/image-like payloads
+        const mime = content.mimetype || content.type || '';
+        if (mime && /^image\//i.test(String(mime))) return '[图片]';
+        if (mime && /^video\//i.test(String(mime))) return '[视频]';
+        if (content.filename) return '[文件]';
+
+        const url = content.url || content.thumbnailUrl || content.downloadUrl || '';
+        if (url) {
+          const u = String(url);
+          if (/\.(png|jpe?g|gif|webp|bmp|svg)(\?|#|$)/i.test(u)) return '[图片]';
+          if (/\.(mp4|webm|mov|mkv)(\?|#|$)/i.test(u)) return '[视频]';
+          return '[文件]';
+        }
+
+        return '[富文本]';
+      } catch (e) {
+        return '[富文本]';
+      }
+    }
+
     function messageTextPreview(m) {
       if (!m) return '';
       if (m.type === 'emoji' && m.content) {
-        return '[表情] ' + (m.content.filename || '');
+        const fn = (m.content && m.content.filename) ? String(m.content.filename) : '';
+        return fn ? '[表情] ' + fn : '[表情]';
+      }
+      if (m.type === 'file') {
+        const fn = m.content && m.content.filename ? String(m.content.filename) : '';
+        return fn ? '[文件] ' + fn : '[文件]';
       }
       if (m.content && typeof m.content === 'object') {
         // content might be {text:...} or other structured payload
-        return m.content.text || JSON.stringify(m.content);
+        return previewFromStructuredContent(m.content);
       }
       if (m.content === null || m.content === undefined) return '';
       return String(m.content);
@@ -788,6 +887,25 @@ const app = createApp({
       const mm = String(d.getMinutes()).padStart(2, '0');
       const ss = String(d.getSeconds()).padStart(2, '0');
       return `${yyyy}年${MM}月${dd}日 ${hh}:${mm}:${ss}`;
+    }
+
+    function shouldShowTimeDivider(idx) {
+      try {
+        const gapMs = 5 * 60 * 1000;
+        const list = Array.isArray(messages.value) ? messages.value : [];
+        if (idx === undefined || idx === null) return false;
+        const i = Number(idx);
+        if (!Number.isFinite(i) || i <= 0) return false;
+        const prev = list[i - 1];
+        const cur = list[i];
+        const prevD = parseMessageTime(prev);
+        const curD = parseMessageTime(cur);
+        if (!prevD || !curD) return false;
+        const diff = curD.getTime() - prevD.getTime();
+        return diff > gapMs;
+      } catch (e) {
+        return false;
+      }
     }
 
     function repliedRefMessage(m) {
@@ -922,7 +1040,7 @@ const app = createApp({
         }
         const res = await safeFetch(`${apiBase.value}/chats`);
         if (!res.ok) throw new Error('未登录或请求失败');
-        chats.value = await res.json();
+        chats.value = sortChatsList(await res.json());
 
         // Prefetch 1:1 peer profiles so chat list can show avatars.
         try {
@@ -1413,6 +1531,7 @@ const app = createApp({
       isOwnMessage,
       bubbleBackground,
       formatTime,
+      shouldShowTimeDivider,
       isImageFile,
       isVideoFile,
       fileDisplayUrl,

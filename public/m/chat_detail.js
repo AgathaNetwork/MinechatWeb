@@ -463,6 +463,25 @@ const app = createApp({
       return `${yyyy}年${MM}月${dd}日 ${hh}:${mm}:${ss}`;
     }
 
+    function shouldShowTimeDivider(idx) {
+      try {
+        const gapMs = 5 * 60 * 1000;
+        const list = Array.isArray(messages.value) ? messages.value : [];
+        if (idx === undefined || idx === null) return false;
+        const i = Number(idx);
+        if (!Number.isFinite(i) || i <= 0) return false;
+        const prev = list[i - 1];
+        const cur = list[i];
+        const prevD = parseMessageTime(prev);
+        const curD = parseMessageTime(cur);
+        if (!prevD || !curD) return false;
+        const diff = curD.getTime() - prevD.getTime();
+        return diff > gapMs;
+      } catch (e) {
+        return false;
+      }
+    }
+
     function toggleMessageTime(m) {
       if (!m) return;
       m.__showTime = !m.__showTime;
@@ -1058,6 +1077,7 @@ const app = createApp({
       fileDisplayUrl,
       bubbleBackground,
       formatTime,
+      shouldShowTimeDivider,
       repliedRefMessage,
       scrollToMessage,
       toggleMessageTime,

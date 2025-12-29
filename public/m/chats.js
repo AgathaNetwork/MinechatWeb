@@ -133,7 +133,67 @@ const app = createApp({
       try {
         const res = await safeFetch(`${apiBase.value}/chats`);
         if (!res.ok) return;
-        chats.value = await res.json();
+        chats.value = sortChatsList(await res.json());
+      } catch (e) {}
+    }
+
+    function parseAnyTimeToMs(v) {
+      try {
+        if (v === undefined || v === null || v === '') return 0;
+        if (typeof v === 'number') {
+          const ms = v < 1e12 ? v * 1000 : v;
+          return Number.isFinite(ms) ? ms : 0;
+        }
+        const s = String(v);
+        if (!s) return 0;
+        if (/^\d+$/.test(s)) {
+          const num = Number(s);
+          const ms = num < 1e12 ? num * 1000 : num;
+          return Number.isFinite(ms) ? ms : 0;
+        }
+        const d = new Date(s);
+        const ms = d.getTime();
+        return Number.isFinite(ms) ? ms : 0;
+      } catch (e) {
+        return 0;
+      }
+    }
+
+    function messageTimeMs(m) {
+      if (!m || typeof m !== 'object') return 0;
+      const v = m.createdAt ?? m.created_at ?? m.sentAt ?? m.sent_at ?? m.timestamp ?? m.time ?? m.ts;
+      return parseAnyTimeToMs(v);
+    }
+
+    function chatLastActivityMs(chat) {
+      try {
+        if (!chat || typeof chat !== 'object') return 0;
+        const lm = chat.lastMessage;
+        const t = messageTimeMs(lm);
+        if (t) return t;
+        const v =
+          chat.updatedAt ??
+          chat.updated_at ??
+          chat.lastActiveAt ??
+          chat.last_active_at ??
+          chat.createdAt ??
+          chat.created_at;
+        return parseAnyTimeToMs(v);
+      } catch (e) {
+        return 0;
+      }
+    }
+
+    function sortChatsList(list) {
+      const arr = Array.isArray(list) ? list.slice() : [];
+      const filtered = arr.filter((c) => c && String(c.id) !== 'global');
+      filtered.sort((a, b) => chatLastActivityMs(b) - chatLastActivityMs(a));
+      return filtered;
+    }
+
+    function resortChats() {
+      try {
+        chats.value = sortChatsList(chats.value);
       } catch (e) {}
     }
 
@@ -207,8 +267,12 @@ const app = createApp({
 
             chat.lastMessage = msg;
 
-            // Per requirement: mark unread for any new message (including our own echo).
-            chatUnreadMap[String(chatId)] = true;
+            // Unread: only for messages from others.
+            const fromUser = msg && (msg.from_user || msg.fromUser || msg.from);
+            const isSelfMsg = !!(selfUserId.value && fromUser && String(fromUser) === String(selfUserId.value));
+            if (!isSelfMsg) chatUnreadMap[String(chatId)] = true;
+
+            resortChats();
 
             // Ensure peer avatar/name are available for this chat
             try {
@@ -339,12 +403,39 @@ const app = createApp({
       return name ? name.charAt(0).toUpperCase() : '?';
     }
 
+    function previewFromStructuredContent(content) {
+      try {
+        if (!content || typeof content !== 'object') return '';
+        if (content.text !== undefined && content.text !== null) return String(content.text);
+        if (content.packId || content.pack_id) return '[表情]';
+        if (content.key && /^image\//i.test(String(content.key))) return '[表情]';
+        const mime = content.mimetype || content.type || '';
+        if (mime && /^image\//i.test(String(mime))) return '[图片]';
+        if (mime && /^video\//i.test(String(mime))) return '[视频]';
+        if (content.filename) return '[文件]';
+        const url = content.url || content.thumbnailUrl || content.downloadUrl || '';
+        if (url) {
+          const u = String(url);
+          if (/\.(png|jpe?g|gif|webp|bmp|svg)(\?|#|$)/i.test(u)) return '[图片]';
+          if (/\.(mp4|webm|mov|mkv)(\?|#|$)/i.test(u)) return '[视频]';
+          return '[文件]';
+        }
+        return '[富文本]';
+      } catch (e) {
+        return '[富文本]';
+      }
+    }
+
     function formatLastMessage(chat) {
       if (!chat || !chat.lastMessage) return '';
       const msg = chat.lastMessage;
       const content = msg.content;
       
       if (msg.type === 'text') {
+        if (content && typeof content === 'object') {
+          const p = previewFromStructuredContent(content);
+          return p.length > 20 ? p.substring(0, 20) + '...' : p;
+        }
         const text = (content && (content.text !== undefined ? content.text : content)) || '';
         const str = String(text);
         return str.length > 20 ? str.substring(0, 20) + '...' : str;
