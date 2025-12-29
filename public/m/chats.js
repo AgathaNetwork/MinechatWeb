@@ -218,6 +218,85 @@ const app = createApp({
         if (socket.value && socket.value.connected) return;
         if (typeof window === 'undefined' || !window.io) return;
 
+        function extractChatFromPayload(payload) {
+          try {
+            if (!payload) return null;
+            if (payload.chat && typeof payload.chat === 'object') return payload.chat;
+            if (payload.data && payload.data.chat && typeof payload.data.chat === 'object') return payload.data.chat;
+            if (payload.id && payload.type) return payload;
+            return null;
+          } catch (e) {
+            return null;
+          }
+        }
+
+        function extractChatIdFromPayload(payload) {
+          try {
+            if (!payload) return null;
+            const cid = payload.chatId || payload.chat_id || payload.id;
+            if (cid !== undefined && cid !== null && String(cid)) return String(cid);
+            const chat = extractChatFromPayload(payload);
+            if (chat && (chat.id !== undefined && chat.id !== null)) return String(chat.id);
+            return null;
+          } catch (e) {
+            return null;
+          }
+        }
+
+        function normalizeIncomingChat(chat) {
+          try {
+            if (!chat || typeof chat !== 'object') return null;
+            const c = Object.assign({}, chat);
+            if (c.id !== undefined && c.id !== null) c.id = String(c.id);
+            const t = String(c.type || '').toLowerCase();
+            if (t === 'group') {
+              if (!c.displayName) c.displayName = c.name || '群聊';
+            }
+            return c;
+          } catch (e) {
+            return null;
+          }
+        }
+
+        function upsertChatInList(incomingChat) {
+          try {
+            const c = normalizeIncomingChat(incomingChat);
+            if (!c || !c.id) return;
+
+            // Safety: only accept chats we are a member of (if members are present).
+            try {
+              const me = selfUserId.value ? String(selfUserId.value) : null;
+              const members = c.members || c.memberIds;
+              if (me && Array.isArray(members) && members.length > 0) {
+                if (!members.map(String).includes(me)) return;
+              }
+            } catch (e2) {}
+
+            const list = Array.isArray(chats.value) ? chats.value : [];
+            const idx = list.findIndex((x) => x && String(x.id) === String(c.id));
+            if (idx >= 0) {
+              const existing = list[idx] || {};
+              const merged = Object.assign({}, existing, c);
+              if (existing.lastMessage && !merged.lastMessage) merged.lastMessage = existing.lastMessage;
+              list.splice(idx, 1, merged);
+            } else {
+              list.push(c);
+            }
+            chats.value = list;
+            resortChats();
+          } catch (e) {}
+        }
+
+        function removeChatFromList(chatId) {
+          try {
+            const cid = chatId !== undefined && chatId !== null ? String(chatId) : '';
+            if (!cid) return;
+            chats.value = (chats.value || []).filter((c) => c && String(c.id) !== cid);
+            try { delete chatUnreadMap[cid]; } catch (e) {}
+            try { delete joinedRooms[cid]; } catch (e) {}
+          } catch (e) {}
+        }
+
         const rawApiBase = String(apiBase.value || '').trim();
         const useDirect = /^https?:\/\//i.test(rawApiBase);
         let socketUrl = window.location.origin;
@@ -316,6 +395,88 @@ const app = createApp({
 
         s.on('message.recalled', onMessageUpdatedLike);
         s.on('message.updated', onMessageUpdatedLike);
+
+        // --- Group/chat lifecycle events ---
+        s.on('chat.created', async (payload) => {
+          try {
+            const chat = extractChatFromPayload(payload);
+            if (chat) {
+              upsertChatInList(chat);
+            } else {
+              // fallback: refresh list if payload doesn't include chat
+              await loadChats();
+            }
+            joinAllChatRooms();
+            await hydrateChatPeerProfiles();
+          } catch (e) {}
+        });
+
+        s.on('chat.updated', async (payload) => {
+          try {
+            const chat = extractChatFromPayload(payload);
+            if (chat) {
+              upsertChatInList(chat);
+            } else {
+              // best-effort refresh
+              await loadChats();
+            }
+            joinAllChatRooms();
+            await hydrateChatPeerProfiles();
+          } catch (e) {}
+        });
+
+        s.on('chat.renamed', async (payload) => {
+          try {
+            const chat = extractChatFromPayload(payload);
+            const cid = extractChatIdFromPayload(payload);
+            if (chat) {
+              upsertChatInList(chat);
+            } else if (cid) {
+              const list = Array.isArray(chats.value) ? chats.value : [];
+              const idx = list.findIndex((c) => c && String(c.id) === String(cid));
+              if (idx >= 0) {
+                const name = payload && (payload.name !== undefined ? payload.name : payload.chatName);
+                if (name !== undefined) {
+                  const merged = Object.assign({}, list[idx], { name });
+                  if (String(merged.type || '').toLowerCase() === 'group') {
+                    merged.displayName = name || '群聊';
+                  }
+                  list.splice(idx, 1, merged);
+                  chats.value = list;
+                  resortChats();
+                }
+              }
+            }
+          } catch (e) {}
+        });
+
+        async function onChatStructureChanged(payload) {
+          try {
+            // members/admins/owner changes can affect permissions & displayName; simplest is reload list.
+            await loadChats();
+            joinAllChatRooms();
+            await hydrateChatPeerProfiles();
+          } catch (e) {}
+        }
+
+        s.on('chat.members.added', onChatStructureChanged);
+        s.on('chat.members.removed', onChatStructureChanged);
+        s.on('chat.admins.changed', onChatStructureChanged);
+        s.on('chat.owner.changed', onChatStructureChanged);
+
+        function onChatRemovedLike(payload, tip) {
+          try {
+            const cid = extractChatIdFromPayload(payload);
+            if (cid) removeChatFromList(cid);
+            try {
+              if (tip && ElementPlus && ElementPlus.ElMessage) ElementPlus.ElMessage.warning(tip);
+            } catch (e2) {}
+          } catch (e) {}
+        }
+
+        s.on('chat.dissolved', (p) => onChatRemovedLike(p, '群聊已解散'));
+        s.on('chat.deleted', (p) => onChatRemovedLike(p, '会话已删除'));
+        s.on('chat.kicked', (p) => onChatRemovedLike(p, '你已被移出群聊'));
       } catch (e) {
         // ignore
       }
@@ -564,6 +725,20 @@ const app = createApp({
 
       connectSocket();
       joinAllChatRooms();
+
+      // If user navigates back to this page, the browser may restore it from BFCache and
+      // skip onMounted(). Ensure the list is refreshed so newly created chats show up.
+      try {
+        window.addEventListener('pageshow', async (ev) => {
+          try {
+            if (!ev || !ev.persisted) return;
+            await loadChats();
+            await hydrateChatPeerProfiles();
+            connectSocket();
+            joinAllChatRooms();
+          } catch (e) {}
+        });
+      } catch (e) {}
     });
 
     return {

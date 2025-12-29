@@ -241,6 +241,11 @@
               <el-button type="warning" size="small" :loading="groupActionLoading" :disabled="!transferOwnerId" @click="transferGroupOwner">转让</el-button>
             </div>
           </div>
+
+          <div v-if="groupIsOwner" style="margin-top:16px">
+            <div style="font-weight:600;margin-bottom:8px">解散群聊</div>
+            <el-button type="danger" plain size="small" style="width:100%" :loading="groupActionLoading" @click="dissolveGroupChat">解散群聊</el-button>
+          </div>
         </div>
       </el-drawer>
     </div>
