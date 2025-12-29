@@ -82,19 +82,45 @@
                         <div style="flex:1;min-width:0">
                           <div style="font-weight:500;margin-bottom:4px">{{ getChatName(c) }}</div>
                           <div style="font-size:12px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-                            <template v-if="lastMessagePreviewTag(c)">
+                            <template v-if="isGroupChatItem(c)">
                               <span class="chat-preview">
                                 <el-tag
+                                  v-if="lastMessageSenderBadge(c)"
                                   type="info"
                                   effect="plain"
                                   size="small"
-                                  :class="{ 'chat-preview-tag-tight': !!lastMessagePreviewSuffix(c) || lastMessagePreviewTag(c)==='已撤回' }"
-                                >{{ lastMessagePreviewTag(c) }}</el-tag>
-                                <span v-if="lastMessagePreviewSuffix(c)" class="chat-preview-suffix">{{ lastMessagePreviewSuffix(c) }}</span>
+                                  class="chat-preview-tag-tight"
+                                >{{ lastMessageSenderBadge(c) }}</el-tag>
+
+                                <template v-if="lastMessagePreviewTag(c)">
+                                  <el-tag
+                                    type="info"
+                                    effect="plain"
+                                    size="small"
+                                    :class="{ 'chat-preview-tag-tight': !!lastMessagePreviewSuffix(c) || lastMessagePreviewTag(c)==='已撤回' }"
+                                  >{{ lastMessagePreviewTag(c) }}</el-tag>
+                                  <span v-if="lastMessagePreviewSuffix(c)" class="chat-preview-suffix">{{ lastMessagePreviewSuffix(c) }}</span>
+                                </template>
+                                <template v-else>
+                                  <span class="chat-preview-suffix">{{ formatLastMessage(c) }}</span>
+                                </template>
                               </span>
                             </template>
                             <template v-else>
-                              {{ formatLastMessage(c) }}
+                              <template v-if="lastMessagePreviewTag(c)">
+                                <span class="chat-preview">
+                                  <el-tag
+                                    type="info"
+                                    effect="plain"
+                                    size="small"
+                                    :class="{ 'chat-preview-tag-tight': !!lastMessagePreviewSuffix(c) || lastMessagePreviewTag(c)==='已撤回' }"
+                                  >{{ lastMessagePreviewTag(c) }}</el-tag>
+                                  <span v-if="lastMessagePreviewSuffix(c)" class="chat-preview-suffix">{{ lastMessagePreviewSuffix(c) }}</span>
+                                </span>
+                              </template>
+                              <template v-else>
+                                {{ formatLastMessage(c) }}
+                              </template>
                             </template>
                           </div>
                         </div>

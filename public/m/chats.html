@@ -22,6 +22,7 @@
       .chat-preview{display:inline-flex;align-items:center;gap:6px;min-width:0}
       .chat-preview-suffix{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       .el-tag.chat-preview-tag-tight{--el-tag-height:16px;height:16px !important;line-height:16px !important;padding:0 6px !important;font-size:11px !important}
+      .el-tag.c-preview-badge{--el-tag-height:16px;height:16px !important;line-height:16px !important;padding:0 6px !important;font-size:11px !important;max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     </style>
   </head>
   <body>
@@ -63,12 +64,15 @@
                 <div style="font-size:12px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
                   <template v-if="lastMessagePreviewTag(c)">
                     <span class="chat-preview">
-                      <el-tag
-                        type="info"
-                        effect="plain"
-                        size="small"
-                        :class="{ 'chat-preview-tag-tight': !!lastMessagePreviewSuffix(c) || lastMessagePreviewTag(c)==='已撤回' }"
-                      >{{ lastMessagePreviewTag(c) }}</el-tag>
+                    <template v-if="isGroupChatItem(c) && lastMessageSenderBadge(c)">
+                      <el-tag size="small" effect="plain" type="info" class="c-preview-badge">{{ lastMessageSenderBadge(c) }}</el-tag>
+                    </template>
+                    <el-tag
+                      type="info"
+                      effect="plain"
+                      size="small"
+                      :class="{ 'chat-preview-tag-tight': !!lastMessagePreviewSuffix(c) || lastMessagePreviewTag(c)==='已撤回' }"
+                    >{{ lastMessagePreviewTag(c) }}</el-tag>
                       <span v-if="lastMessagePreviewSuffix(c)" class="chat-preview-suffix">{{ lastMessagePreviewSuffix(c) }}</span>
                     </span>
                   </template>

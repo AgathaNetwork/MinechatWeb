@@ -718,6 +718,38 @@ const app = createApp({
       }
     }
 
+    function isGroupChatItem(chat) {
+      try {
+        if (!chat) return false;
+        return String(chat.type || '').toLowerCase() === 'group';
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function lastMessageSenderBadge(chat) {
+      try {
+        if (!isGroupChatItem(chat)) return '';
+        const lm = chat && chat.lastMessage;
+        if (!lm || typeof lm !== 'object') return '';
+        const from = lm.from_user || lm.fromUser || lm.from || '';
+        if (!from) return '';
+        if (selfUserId.value && String(from) === String(selfUserId.value)) return '我';
+
+        const id = String(from);
+        const name = userNameCache[id];
+        if (name && name !== '未知玩家') return String(name);
+
+        // Best-effort: trigger fetch so the UI can update later.
+        try {
+          fetchUserById(id);
+        } catch (e) {}
+        return '未知玩家';
+      } catch (e) {
+        return '';
+      }
+    }
+
     function hasUnread(chatId) {
       const id = chatId !== undefined && chatId !== null ? String(chatId) : '';
       return id ? !!chatUnreadMap[id] : false;
@@ -773,6 +805,8 @@ const app = createApp({
       formatLastMessage,
       lastMessagePreviewTag,
       lastMessagePreviewSuffix,
+      isGroupChatItem,
+      lastMessageSenderBadge,
       hasUnread,
       openGlobal,
       openChat,

@@ -911,6 +911,30 @@ const app = createApp({
       }
     }
 
+    function isGroupChatItem(chat) {
+      try {
+        if (!chat) return false;
+        return String(chat.type || '').toLowerCase() === 'group';
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function lastMessageSenderBadge(chat) {
+      try {
+        if (!isGroupChatItem(chat)) return '';
+        const lm = chat && chat.lastMessage;
+        if (!lm || typeof lm !== 'object') return '';
+        const from = lm.from_user || lm.fromUser || lm.from || '';
+        if (!from) return '';
+        if (selfUserId.value && String(from) === String(selfUserId.value)) return '我';
+        const name = userNameCache[String(from)];
+        return name && name !== '未知玩家' ? String(name) : '未知玩家';
+      } catch (e) {
+        return '';
+      }
+    }
+
     function previewTagAndSuffixFromMessage(m) {
       try {
         if (!m || typeof m !== 'object') return { tag: '', suffix: '', text: '' };
@@ -2829,6 +2853,8 @@ const app = createApp({
       fileDisplayUrl,
       fileOriginalUrl,
       messageFilename,
+      isGroupChatItem,
+      lastMessageSenderBadge,
       openImagePreview,
       closeImagePreview,
       requestCloseImagePreview,
