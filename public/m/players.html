@@ -42,15 +42,15 @@
 
       <div class="bottom-nav">
         <a href="/m/chats.html" class="nav-item">
-          <span style="font-size:20px">💬</span>
+          <el-icon :size="20"><chat-dot-round /></el-icon>
           <span>会话</span>
         </a>
         <a href="/m/players.html" class="nav-item active">
-          <span style="font-size:20px">👥</span>
+          <el-icon :size="20"><user /></el-icon>
           <span>玩家</span>
         </a>
         <a href="/m/me.html" class="nav-item">
-          <span style="font-size:20px">👤</span>
+          <el-icon :size="20"><user-filled /></el-icon>
           <span>我</span>
         </a>
       </div>
@@ -58,6 +58,7 @@
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
     <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue@2/dist/index.iife.min.js"></script>
     <script src="/m/players.js"></script>
     <script>
       document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, { passive: false });

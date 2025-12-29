@@ -1,7 +1,7 @@
 // Mobile me page
 const { createApp, ref, computed, onMounted } = Vue;
 
-createApp({
+const app = createApp({
   setup() {
     const apiBase = ref('');
     const token = ref(localStorage.getItem('token') || null);
@@ -236,4 +236,15 @@ createApp({
       goEmojiManage,
     };
   },
-}).use(ElementPlus).mount('#app');
+});
+
+try {
+  const icons = window.ElementPlusIconsVue;
+  if (icons && typeof icons === 'object') {
+    for (const [key, component] of Object.entries(icons)) {
+      app.component(key, component);
+    }
+  }
+} catch (e) {}
+
+app.use(ElementPlus).mount('#app');

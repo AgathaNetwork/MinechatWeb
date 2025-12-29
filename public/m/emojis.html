@@ -21,7 +21,9 @@
   <body>
     <div id="app" v-cloak>
       <div class="top-bar">
-        <el-button @click="goBack" icon="ArrowLeft" circle size="small"></el-button>
+        <el-button @click="goBack" circle size="small">
+          <el-icon><arrow-left /></el-icon>
+        </el-button>
         <h3 style="margin:0;flex:1">表情包管理</h3>
       </div>
 
@@ -52,6 +54,7 @@
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
     <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue@2/dist/index.iife.min.js"></script>
     <script src="/m/emojis.js"></script>
     <script>
       document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, { passive: false });

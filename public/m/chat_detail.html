@@ -34,7 +34,9 @@
   <body>
     <div id="app" v-cloak>
       <div class="top-bar">
-        <el-button @click="goBack" size="small" style="padding:5px 10px">←</el-button>
+        <el-button @click="goBack" size="small" style="padding:5px 10px">
+          <el-icon><arrow-left /></el-icon>
+        </el-button>
         <el-avatar v-if="currentChatFaceUrl" shape="square" :src="currentChatFaceUrl" :size="32"></el-avatar>
         <h3 style="margin:0;flex:1">{{ currentChatTitle }}</h3>
       </div>
@@ -100,12 +102,14 @@
         </div>
         <div style="display:flex;gap:8px;align-items:flex-end">
           <input ref="fileInputEl" type="file" accept="image/*,video/*" style="display:none" @change="onFileSelected" />
-          <el-button v-if="!isGlobalChat" @click="openFilePicker" circle style="flex-shrink:0">
-            <el-icon><FolderOpened /></el-icon>
-          </el-button>
-          <el-button v-if="!isGlobalChat" @click="toggleEmojiPanel" circle style="flex-shrink:0">
-            <el-icon><Smile /></el-icon>
-          </el-button>
+          <div v-if="!isGlobalChat" style="display:flex;gap:2px;align-items:center;flex-shrink:0">
+            <el-button @click="openFilePicker" circle style="flex-shrink:0">
+              <el-icon><folder-opened /></el-icon>
+            </el-button>
+            <el-button @click="toggleEmojiPanel" circle style="flex-shrink:0">
+              <el-icon><magic-stick /></el-icon>
+            </el-button>
+          </div>
           <el-input v-model="msgInput" placeholder="输入消息" @keyup.enter="sendText" style="flex:1"></el-input>
           <el-button type="primary" @click="sendText" style="flex-shrink:0">发送</el-button>
         </div>
@@ -126,7 +130,7 @@
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
     <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
-    <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue@2/dist/index.iife.min.js"></script>
     <script src="/api/socket.io/socket.io.js"></script>
     <script src="/m/chat_detail.js"></script>
     <script>
