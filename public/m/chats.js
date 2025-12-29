@@ -471,6 +471,59 @@ const app = createApp({
       return '';
     }
 
+    function isRecalledMessage(m) {
+      try {
+        if (!m || typeof m !== 'object') return false;
+        if (String(m.type || '') === 'recalled') return true;
+        const c = m.content;
+        if (c && typeof c === 'object' && c.recalled === true) return true;
+        return false;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function previewTagAndSuffixFromMessage(m) {
+      try {
+        if (!m || typeof m !== 'object') return { tag: '', suffix: '' };
+        if (isRecalledMessage(m)) return { tag: '已撤回', suffix: '' };
+
+        const t = String(m.type || '').toLowerCase();
+        if (t === 'emoji' || t === 'sticker') {
+          const fn = m.content && m.content.filename ? String(m.content.filename) : '';
+          return { tag: '表情', suffix: fn };
+        }
+        if (t === 'file') {
+          const mime = m.content && (m.content.mimetype || m.content.type) ? String(m.content.mimetype || m.content.type) : '';
+          const fn = m.content && m.content.filename ? String(m.content.filename) : '';
+          const tag = /^image\//i.test(mime) ? '图片' : /^video\//i.test(mime) ? '视频' : '文件';
+          return { tag, suffix: fn };
+        }
+
+        return { tag: '', suffix: '' };
+      } catch (e) {
+        return { tag: '', suffix: '' };
+      }
+    }
+
+    function lastMessagePreviewTag(chat) {
+      try {
+        if (!chat || !chat.lastMessage) return '';
+        return previewTagAndSuffixFromMessage(chat.lastMessage).tag || '';
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function lastMessagePreviewSuffix(chat) {
+      try {
+        if (!chat || !chat.lastMessage) return '';
+        return previewTagAndSuffixFromMessage(chat.lastMessage).suffix || '';
+      } catch (e) {
+        return '';
+      }
+    }
+
     function hasUnread(chatId) {
       const id = chatId !== undefined && chatId !== null ? String(chatId) : '';
       return id ? !!chatUnreadMap[id] : false;
@@ -504,6 +557,8 @@ const app = createApp({
       getChatAvatar,
       getChatInitial,
       formatLastMessage,
+      lastMessagePreviewTag,
+      lastMessagePreviewSuffix,
       hasUnread,
       openGlobal,
       openChat,

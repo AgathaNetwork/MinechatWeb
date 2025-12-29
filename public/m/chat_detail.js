@@ -89,7 +89,12 @@ const app = createApp({
 
     const replyPreview = computed(() => {
       if (!replyTarget.value) return '';
-      return messageTextPreview(replyTarget.value) || '[消息]';
+      const tag = messagePreviewTag(replyTarget.value);
+      if (tag) {
+        const suffix = messagePreviewSuffix(replyTarget.value);
+        return suffix ? `${tag} ${suffix}` : tag;
+      }
+      return messagePreviewText(replyTarget.value) || '消息';
     });
 
     async function fetchConfig() {
@@ -304,6 +309,70 @@ const app = createApp({
         return String(t);
       }
       return '';
+    }
+
+    function truncatePreviewText(s, maxLen) {
+      try {
+        const max = maxLen || 120;
+        const str = String(s || '');
+        if (!str) return '';
+        return str.length > max ? str.slice(0, max) + '…' : str;
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function previewTagAndSuffixFromMessage(m) {
+      try {
+        if (!m || typeof m !== 'object') return { tag: '', suffix: '' };
+        if (isRecalledMessage(m)) return { tag: '已撤回', suffix: '' };
+
+        const t = String(m.type || '').toLowerCase();
+        if (t === 'emoji' || t === 'sticker') {
+          const fn = m.content && m.content.filename ? String(m.content.filename) : '';
+          return { tag: '表情', suffix: fn };
+        }
+        if (t === 'file') {
+          const mime = m.content && (m.content.mimetype || m.content.type) ? String(m.content.mimetype || m.content.type) : '';
+          const fn = m.content && m.content.filename ? String(m.content.filename) : '';
+          const tag = /^image\//i.test(mime) ? '图片' : /^video\//i.test(mime) ? '视频' : '文件';
+          return { tag, suffix: fn };
+        }
+
+        return { tag: '', suffix: '' };
+      } catch (e) {
+        return { tag: '', suffix: '' };
+      }
+    }
+
+    function messagePreviewTag(m) {
+      try {
+        return previewTagAndSuffixFromMessage(m).tag || '';
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function messagePreviewSuffix(m) {
+      try {
+        return previewTagAndSuffixFromMessage(m).suffix || '';
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function messagePreviewText(m) {
+      try {
+        if (!m || typeof m !== 'object') return '';
+        if (isRecalledMessage(m)) return '';
+        if (String(m.type || '') === 'text') {
+          const t = (m.content && (m.content.text !== undefined ? m.content.text : m.content)) || '';
+          return truncatePreviewText(String(t), 120);
+        }
+        return '';
+      } catch (e) {
+        return '';
+      }
     }
 
     function isOwnMessage(m) {
@@ -1464,6 +1533,9 @@ const app = createApp({
       ctxCollectEmoji,
       messageAuthorName,
       messageAuthorFaceUrl,
+      messagePreviewTag,
+      messagePreviewSuffix,
+      messagePreviewText,
       messageTextPreview,
       isRecalledMessage,
       recallNoticeText,

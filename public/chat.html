@@ -14,6 +14,9 @@
       .time-divider{display:flex;align-items:center;justify-content:center;margin:10px 0;color:#999;font-size:12px;user-select:none}
       .time-divider:before,.time-divider:after{content:'';flex:1;border-top:1px solid #e6e6e6}
       .time-divider-text{padding:0 10px;white-space:nowrap;background:#fff}
+      .chat-preview{display:inline-flex;align-items:center;gap:6px;min-width:0}
+      .chat-preview-suffix{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .el-tag.chat-preview-tag-tight{--el-tag-height:16px;height:16px !important;line-height:16px !important;padding:0 6px !important;font-size:11px !important}
       .img-preview-mask{position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px}
       .img-preview-img{max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;background:#fff;touch-action:none;user-select:none;cursor:grab;transform-origin:0 0}
       .img-preview-img.dragging{cursor:grabbing}
@@ -61,7 +64,22 @@
                     <el-avatar v-else shape="square" :size="40">{{ getChatInitial(c) }}</el-avatar>
                     <div style="flex:1;min-width:0">
                       <div style="font-weight:500;margin-bottom:4px">{{ getChatName(c) }}</div>
-                      <div style="font-size:12px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ formatLastMessage(c) }}</div>
+                      <div style="font-size:12px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                        <template v-if="lastMessagePreviewTag(c)">
+                          <span class="chat-preview">
+                            <el-tag
+                              type="info"
+                              effect="plain"
+                              size="small"
+                              :class="{ 'chat-preview-tag-tight': !!lastMessagePreviewSuffix(c) || lastMessagePreviewTag(c)==='已撤回' }"
+                            >{{ lastMessagePreviewTag(c) }}</el-tag>
+                            <span v-if="lastMessagePreviewSuffix(c)" class="chat-preview-suffix">{{ lastMessagePreviewSuffix(c) }}</span>
+                          </span>
+                        </template>
+                        <template v-else>
+                          {{ formatLastMessage(c) }}
+                        </template>
+                      </div>
                     </div>
                   </div>
                   <div v-if="hasUnread(c.id)" style="width:8px;height:8px;border-radius:50%;background:#1890ff;flex-shrink:0"></div>
@@ -115,7 +133,14 @@
                   <div v-if="!isGlobalChat && m.replied_to && repliedRefMessage(m)" class="reply-quote"
                        style="padding:6px 8px;border-left:3px solid #ccc;background:#f7f7f7;margin:0 0 6px 0;border-radius:6px;width:100%">
                     <span style="cursor:pointer" @click="scrollToMessage((typeof m.replied_to==='object') ? (m.replied_to.id||'') : m.replied_to)">
-                      {{ messageAuthorName(repliedRefMessage(m)) }}: {{ messageTextPreview(repliedRefMessage(m)) || '[已回复]' }}
+                      {{ messageAuthorName(repliedRefMessage(m)) }}:
+                      <template v-if="messagePreviewTag(repliedRefMessage(m))">
+                        <el-tag type="info" effect="plain" size="small">{{ messagePreviewTag(repliedRefMessage(m)) }}</el-tag>
+                        <span v-if="messagePreviewSuffix(repliedRefMessage(m))"> {{ messagePreviewSuffix(repliedRefMessage(m)) }}</span>
+                      </template>
+                      <template v-else>
+                        {{ messagePreviewText(repliedRefMessage(m)) || '已回复' }}
+                      </template>
                     </span>
                   </div>
 
@@ -124,7 +149,7 @@
                     <div @contextmenu.prevent="onMessageContextMenu($event, m)"
                          :style="{ padding:'8px 10px', borderRadius:'12px', border:'1px solid #eee', background: bubbleBackground(m), width:'fit-content', maxWidth:'100%' }">
                       <template v-if="isRecalledMessage(m)">
-                        <span style="white-space:pre-wrap;word-break:break-word;color:#999;font-style:italic">{{ recallNoticeText(m) }}</span>
+                        <el-tag type="info" effect="plain" size="small">{{ recallNoticeText(m) }}</el-tag>
                       </template>
                       <template v-else-if="m.type==='emoji' && m.content && m.content.url">
                         <img :src="m.content.url" alt="emoji" style="max-height:96px;display:inline-block;vertical-align:middle;cursor:pointer" @click.stop="openImagePreview(m.content.url)" />

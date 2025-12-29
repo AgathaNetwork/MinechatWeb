@@ -83,13 +83,20 @@
             <div v-if="!isGlobalChat && m.replied_to && repliedRefMessage(m)" class="reply-quote"
                  style="padding:6px 8px;border-left:3px solid #ccc;background:#f7f7f7;margin:0 0 6px 0;border-radius:6px;width:100%">
               <span style="cursor:pointer" @click.stop="scrollToMessage((typeof m.replied_to==='object') ? (m.replied_to.id||'') : m.replied_to)">
-                {{ messageAuthorName(repliedRefMessage(m)) }}: {{ messageTextPreview(repliedRefMessage(m)) || '[已回复]' }}
+                {{ messageAuthorName(repliedRefMessage(m)) }}:
+                <template v-if="messagePreviewTag(repliedRefMessage(m))">
+                  <el-tag type="info" effect="plain" size="small">{{ messagePreviewTag(repliedRefMessage(m)) }}</el-tag>
+                  <span v-if="messagePreviewSuffix(repliedRefMessage(m))" style="margin-left:6px;color:#666">{{ messagePreviewSuffix(repliedRefMessage(m)) }}</span>
+                </template>
+                <template v-else>
+                  {{ messagePreviewText(repliedRefMessage(m)) || '已回复' }}
+                </template>
               </span>
             </div>
 
             <div class="msg-bubble" :style="{ background: bubbleBackground(m) }">
               <template v-if="isRecalledMessage(m)">
-                <span style="white-space:pre-wrap;color:#999;font-style:italic">{{ recallNoticeText(m) }}</span>
+                <el-tag type="info" effect="plain" size="small">{{ recallNoticeText(m) }}</el-tag>
               </template>
               <template v-else-if="m.type==='emoji' && m.content && m.content.url">
                 <img :src="m.content.url" alt="emoji" style="max-height:96px;display:block;cursor:pointer" @click.stop="openImagePreview(m.content.url)" />
@@ -124,7 +131,16 @@
 
       <div class="input-area" ref="inputAreaEl">
         <div v-if="replyTarget" style="padding:6px 8px;background:#f7f7f7;border-radius:6px;font-size:12px;display:flex;justify-content:space-between;align-items:center;border-left:3px solid #ccc">
-          <span>回复: {{ replyPreview }}</span>
+          <span>
+            回复:
+            <template v-if="messagePreviewTag(replyTarget)">
+              <el-tag type="info" effect="plain" size="small">{{ messagePreviewTag(replyTarget) }}</el-tag>
+              <span v-if="messagePreviewSuffix(replyTarget)" style="margin-left:6px;color:#666">{{ messagePreviewSuffix(replyTarget) }}</span>
+            </template>
+            <template v-else>
+              {{ messagePreviewText(replyTarget) || '消息' }}
+            </template>
+          </span>
           <el-button size="small" @click="clearReplyTarget">取消</el-button>
         </div>
         <div style="display:flex;gap:8px;align-items:flex-end">

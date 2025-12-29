@@ -19,6 +19,9 @@
       .chat-item{padding:12px;border-bottom:1px solid #f0f0f0;cursor:pointer;display:flex;gap:10px;align-items:center;text-decoration:none;color:inherit}
       .chat-item:active{background:#f5f5f5}
       .unread-dot{width:8px;height:8px;border-radius:50%;background:#1890ff;flex-shrink:0}
+      .chat-preview{display:inline-flex;align-items:center;gap:6px;min-width:0}
+      .chat-preview-suffix{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .el-tag.chat-preview-tag-tight{--el-tag-height:16px;height:16px !important;line-height:16px !important;padding:0 6px !important;font-size:11px !important}
     </style>
   </head>
   <body>
@@ -44,7 +47,22 @@
           <el-avatar v-else shape="square" :size="48">{{ getChatInitial(c) }}</el-avatar>
           <div style="flex:1;min-width:0">
             <div style="font-weight:500;margin-bottom:4px">{{ getChatName(c) }}</div>
-            <div style="font-size:12px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ formatLastMessage(c) }}</div>
+            <div style="font-size:12px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+              <template v-if="lastMessagePreviewTag(c)">
+                <span class="chat-preview">
+                  <el-tag
+                    type="info"
+                    effect="plain"
+                    size="small"
+                    :class="{ 'chat-preview-tag-tight': !!lastMessagePreviewSuffix(c) || lastMessagePreviewTag(c)==='已撤回' }"
+                  >{{ lastMessagePreviewTag(c) }}</el-tag>
+                  <span v-if="lastMessagePreviewSuffix(c)" class="chat-preview-suffix">{{ lastMessagePreviewSuffix(c) }}</span>
+                </span>
+              </template>
+              <template v-else>
+                {{ formatLastMessage(c) }}
+              </template>
+            </div>
           </div>
           <div v-if="hasUnread(c.id)" class="unread-dot"></div>
         </div>

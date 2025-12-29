@@ -471,6 +471,76 @@ const app = createApp({
       return '';
     }
 
+    function previewTagAndSuffixFromMessage(m) {
+      try {
+        if (!m || typeof m !== 'object') return { tag: '', suffix: '', text: '' };
+        if (isRecalledMessage(m)) return { tag: '已撤回', suffix: '', text: '' };
+
+        const t = String(m.type || '').toLowerCase();
+        if (t === 'emoji' || t === 'sticker') {
+          const fn = m.content && m.content.filename ? String(m.content.filename) : '';
+          return { tag: '表情', suffix: fn, text: '' };
+        }
+        if (t === 'file') {
+          const mime = m.content && (m.content.mimetype || m.content.type) ? String(m.content.mimetype || m.content.type) : '';
+          const fn = m.content && m.content.filename ? String(m.content.filename) : '';
+          const tag = /^image\//i.test(mime) ? '图片' : /^video\//i.test(mime) ? '视频' : '文件';
+          return { tag, suffix: fn, text: '' };
+        }
+
+        const txt = messageTextPreview(m);
+        const str = txt ? String(txt) : '';
+        return { tag: '', suffix: '', text: str };
+      } catch (e) {
+        return { tag: '', suffix: '', text: '' };
+      }
+    }
+
+    function lastMessagePreviewTag(chat) {
+      try {
+        if (!chat || !chat.lastMessage) return '';
+        return previewTagAndSuffixFromMessage(chat.lastMessage).tag || '';
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function lastMessagePreviewSuffix(chat) {
+      try {
+        if (!chat || !chat.lastMessage) return '';
+        return previewTagAndSuffixFromMessage(chat.lastMessage).suffix || '';
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function messagePreviewTag(m) {
+      try {
+        return previewTagAndSuffixFromMessage(m).tag || '';
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function messagePreviewSuffix(m) {
+      try {
+        return previewTagAndSuffixFromMessage(m).suffix || '';
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function messagePreviewText(m) {
+      try {
+        const p = previewTagAndSuffixFromMessage(m);
+        if (p.tag) return '';
+        const s = p.text ? String(p.text) : '';
+        return s.length > 60 ? s.slice(0, 60) + '...' : s;
+      } catch (e) {
+        return '';
+      }
+    }
+
     function hasUnread(chatId) {
       return !!chatUnreadMap[chatId];
     }
@@ -1841,6 +1911,11 @@ const app = createApp({
       isRecalledMessage,
       recallNoticeText,
       formatLastMessage,
+      lastMessagePreviewTag,
+      lastMessagePreviewSuffix,
+      messagePreviewTag,
+      messagePreviewSuffix,
+      messagePreviewText,
       getChatName,
       getChatAvatar,
       getChatInitial,
