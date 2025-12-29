@@ -882,6 +882,10 @@ const app = createApp({
     async function openChat(id) {
       // 立即显示加载动画
       chatLoading.value = true;
+
+      // Reset paging UI state
+      loadingMore.value = false;
+      noMoreBefore.value = false;
       
       // 清除当前会话的未读标记
       if (id && id !== 'global') {
@@ -1310,6 +1314,7 @@ const app = createApp({
       currentChatTitle,
       currentChatFaceUrl,
       chatLoading,
+      loadingMore,
       selfFaceUrl,
       messages,
       msgInput,

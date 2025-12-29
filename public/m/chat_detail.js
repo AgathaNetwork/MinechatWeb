@@ -20,6 +20,11 @@ const app = createApp({
     const msgInput = ref('');
     const messagesEl = ref(null);
     const chatLoading = ref(false);
+
+    const loadingMore = ref(false);
+    const noMoreBefore = ref(false);
+    const PAGE_LIMIT = 20;
+    const INITIAL_LIMIT = 50;
     const isGlobalChat = computed(() => currentChatId.value === 'global');
     const socket = ref(null);
     const joinedChatId = ref(null);
@@ -41,6 +46,14 @@ const app = createApp({
     async function fetchConfig() {
       const conf = await fetch('/config').then((r) => r.json());
       apiBase.value = conf.apiProxyBase || conf.apiBase || '';
+    }
+
+    function buildMessagesUrl(chatId, opts) {
+      const before = opts && opts.beforeId ? `before=${encodeURIComponent(opts.beforeId)}&` : '';
+      const lim = opts && opts.limit ? opts.limit : PAGE_LIMIT;
+      const limit = `limit=${encodeURIComponent(lim)}`;
+      if (chatId === 'global') return `${apiBase.value}/global/messages?${before}${limit}`;
+      return `${apiBase.value}/chats/${encodeURIComponent(chatId)}/messages?${before}${limit}`;
     }
 
     function tokenValue() {
@@ -634,6 +647,9 @@ const app = createApp({
       currentChatId.value = id;
       const isGlobal = id === 'global';
 
+      loadingMore.value = false;
+      noMoreBefore.value = false;
+
       try {
         if (isGlobal) {
           currentChatTitle.value = '全服';
@@ -655,13 +671,14 @@ const app = createApp({
           }
         }
 
-        const msgUrl = isGlobal
-          ? `${apiBase.value}/global/messages?limit=50`
-          : `${apiBase.value}/chats/${encodeURIComponent(id)}/messages?limit=50`;
+        const msgUrl = buildMessagesUrl(id, { limit: INITIAL_LIMIT });
         
         const res = await safeFetch(msgUrl);
         if (!res.ok) throw new Error('加载消息失败');
         let msgs = await res.json();
+
+        // Safety: if backend ignores limit and returns full history, only render latest initial page.
+        if (Array.isArray(msgs) && msgs.length > INITIAL_LIMIT) msgs = msgs.slice(-INITIAL_LIMIT);
 
         messages.value = [];
         for (const k of Object.keys(msgById)) delete msgById[k];
@@ -671,6 +688,7 @@ const app = createApp({
           if (m.id) msgById[m.id] = m;
         });
         messages.value = msgs;
+        noMoreBefore.value = !Array.isArray(msgs) || msgs.length < INITIAL_LIMIT;
 
         await nextTick();
         if (messagesEl.value) {
@@ -684,6 +702,50 @@ const app = createApp({
         ElementPlus.ElMessage.error('无法打开会话');
       } finally {
         chatLoading.value = false;
+      }
+    }
+
+    async function loadMoreMessages() {
+      if (!currentChatId.value) return;
+      if (loadingMore.value || noMoreBefore.value) return;
+      if (!messagesEl.value) return;
+      const first = (messages.value || [])[0];
+      if (!first || !first.id) return;
+
+      loadingMore.value = true;
+      const beforeId = first.id;
+      const isGlobal = currentChatId.value === 'global';
+
+      try {
+        const url = buildMessagesUrl(currentChatId.value, { beforeId, limit: PAGE_LIMIT });
+
+        const prevScrollHeight = messagesEl.value.scrollHeight;
+        const prevScrollTop = messagesEl.value.scrollTop;
+
+        const res = await safeFetch(url);
+        if (!res.ok) throw new Error('load more failed');
+        const more = await res.json().catch(() => null);
+        if (!Array.isArray(more) || more.length === 0) {
+          noMoreBefore.value = true;
+          return;
+        }
+
+        more.forEach((m) => {
+          normalizeMessage(m, isGlobal);
+          if (m && m.id) msgById[m.id] = m;
+        });
+
+        messages.value = more.concat(messages.value).map((m) => normalizeMessage(m, isGlobal));
+
+        await nextTick();
+        const newScrollHeight = messagesEl.value.scrollHeight;
+        messagesEl.value.scrollTop = newScrollHeight - prevScrollHeight + prevScrollTop;
+
+        if (more.length < PAGE_LIMIT) noMoreBefore.value = true;
+      } catch (e) {
+        // ignore
+      } finally {
+        loadingMore.value = false;
       }
     }
 
@@ -899,7 +961,12 @@ const app = createApp({
     }
 
     function onMessagesScroll() {
-      // Placeholder for load more messages
+      try {
+        if (!messagesEl.value) return;
+        if (messagesEl.value.scrollTop < 80) {
+          loadMoreMessages();
+        }
+      } catch (e) {}
     }
 
     onMounted(async () => {
@@ -937,6 +1004,7 @@ const app = createApp({
       inputAreaEl,
       messagesEl,
       chatLoading,
+      loadingMore,
       isGlobalChat,
       replyTarget,
       replyPreview,

@@ -47,6 +47,10 @@
           </div>
         </div>
 
+        <div v-if="loadingMore" style="display:flex;justify-content:center;padding:6px 0">
+          <div class="loading-spinner" style="width:22px;height:22px;border-width:3px"></div>
+        </div>
+
         <div v-for="m in messages" :key="m.id" class="msg-wrapper" :data-id="m.id" :class="['msg-row', isOwnMessage(m) ? 'own' : 'other']">
           <el-avatar v-if="!isOwnMessage(m) && messageAuthorFaceUrl(m)" shape="square" :src="messageAuthorFaceUrl(m)" :size="36" style="flex-shrink:0"></el-avatar>
           <div :class="['msg-content-wrapper', m.__showTime ? 'show-time' : '']" @click="toggleMessageTime(m)" @touchstart="onTouchStart(m, $event)" @touchend="onTouchEnd" @touchmove="onTouchMove">
