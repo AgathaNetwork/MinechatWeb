@@ -1,5 +1,5 @@
 // Vue 3 + Element Plus chat page
-const { createApp, ref, reactive, computed, onMounted, nextTick } = Vue;
+const { createApp, ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } = Vue;
 
 const app = createApp({
   setup() {
@@ -54,6 +54,9 @@ const app = createApp({
     const emojiPacks = ref([]);
 
     const msgInput = ref('');
+
+    // Paste-to-send confirmation
+    const pasteConfirmBusy = ref(false);
 
     const imagePreviewVisible = ref(false);
     const imagePreviewUrl = ref('');
@@ -2623,6 +2626,81 @@ const app = createApp({
       }
     }
 
+    function clipboardFilesFromEvent(ev) {
+      try {
+        const dt = ev && ev.clipboardData;
+        if (!dt) return [];
+
+        const out = [];
+        if (dt.items && dt.items.length) {
+          for (const it of dt.items) {
+            if (!it) continue;
+            if (it.kind === 'file') {
+              const f = it.getAsFile && it.getAsFile();
+              if (f) out.push(f);
+            }
+          }
+        }
+        if (!out.length && dt.files && dt.files.length) {
+          for (const f of dt.files) out.push(f);
+        }
+        return out;
+      } catch (e) {
+        return [];
+      }
+    }
+
+    async function handlePasteToSend(ev) {
+      try {
+        // Only when a non-global chat is open.
+        if (!currentChatId.value) return;
+        if (isGlobalChat.value) return;
+
+        const files = clipboardFilesFromEvent(ev);
+        if (!files.length) return;
+
+        if (pasteConfirmBusy.value) return;
+        pasteConfirmBusy.value = true;
+
+        // Prevent pasting placeholder text into inputs when files exist.
+        try {
+          ev.preventDefault();
+          ev.stopPropagation();
+        } catch (e) {}
+
+        const list = files
+          .map((f) => {
+            const name = f && f.name ? String(f.name) : '文件';
+            return name;
+          })
+          .join('\n');
+
+        try {
+          await ElementPlus.ElMessageBox.confirm(
+            `检测到你粘贴了 ${files.length} 个文件：\n${list}\n\n是否发送到当前会话？`,
+            '发送文件',
+            {
+              confirmButtonText: '发送',
+              cancelButtonText: '取消',
+              type: 'warning',
+              closeOnClickModal: false,
+              closeOnPressEscape: true,
+            }
+          );
+        } catch (e) {
+          return;
+        }
+
+        for (const f of files) {
+          if (!f) continue;
+          if (!currentChatId.value || isGlobalChat.value) break;
+          await sendFile(f);
+        }
+      } finally {
+        pasteConfirmBusy.value = false;
+      }
+    }
+
     function onChatClick(c) {
       openChat(c.id);
     }
@@ -2651,6 +2729,10 @@ const app = createApp({
         await loadChats();
       }
 
+      try {
+        document.addEventListener('paste', handlePasteToSend, true);
+      } catch (e) {}
+
       // Image preview drag handlers
       try {
         window.addEventListener('mousemove', onImagePreviewMouseMove);
@@ -2668,6 +2750,12 @@ const app = createApp({
         emojiPanelVisible.value = false;
         hideCtxMenu();
       });
+    });
+
+    onBeforeUnmount(() => {
+      try {
+        document.removeEventListener('paste', handlePasteToSend, true);
+      } catch (e) {}
     });
 
     return {
