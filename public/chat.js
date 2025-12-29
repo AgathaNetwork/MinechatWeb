@@ -856,6 +856,58 @@ const app = createApp({
       return '';
     }
 
+    // Fix common mojibake like "å±å¹...png" where UTF-8 bytes were decoded as Latin1.
+    function fixUtf8Mojibake(s) {
+      try {
+        const str = String(s || '');
+        if (!str) return '';
+
+        // Only attempt when it contains lots of high bytes / control chars.
+        const looksSuspicious = /[\u0080-\u009f]/.test(str) || /[\u00c2-\u00ff]/.test(str);
+        if (!looksSuspicious) return str;
+
+        if (typeof TextDecoder === 'undefined') return str;
+        const bytes = new Uint8Array(str.length);
+        for (let i = 0; i < str.length; i++) bytes[i] = str.charCodeAt(i) & 0xff;
+
+        const decoded = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+        if (!decoded) return str;
+
+        // Heuristic: accept decode when it looks more like human text.
+        const origHasCjk = /[\u4e00-\u9fff]/.test(str);
+        const decodedHasCjk = /[\u4e00-\u9fff]/.test(decoded);
+        const decodedHasReplacement = /\uFFFD/.test(decoded);
+        const origHasControls = /[\u0000-\u001f\u007f-\u009f]/.test(str);
+        const decodedHasControls = /[\u0000-\u001f\u007f-\u009f]/.test(decoded);
+
+        if (!decodedHasReplacement && (decodedHasCjk || (!origHasCjk && origHasControls && !decodedHasControls))) {
+          return decoded;
+        }
+        return str;
+      } catch (e) {
+        return String(s || '');
+      }
+    }
+
+    function displayFilename(raw) {
+      try {
+        const str = String(raw || '');
+        if (!str) return '';
+        return fixUtf8Mojibake(str);
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function messageFilename(m) {
+      try {
+        if (!m || !m.content) return '';
+        return displayFilename(m.content.filename || '');
+      } catch (e) {
+        return '';
+      }
+    }
+
     function previewTagAndSuffixFromMessage(m) {
       try {
         if (!m || typeof m !== 'object') return { tag: '', suffix: '', text: '' };
@@ -863,12 +915,12 @@ const app = createApp({
 
         const t = String(m.type || '').toLowerCase();
         if (t === 'emoji' || t === 'sticker') {
-          const fn = m.content && m.content.filename ? String(m.content.filename) : '';
+          const fn = m.content && m.content.filename ? displayFilename(m.content.filename) : '';
           return { tag: '表情', suffix: fn, text: '' };
         }
         if (t === 'file') {
           const mime = m.content && (m.content.mimetype || m.content.type) ? String(m.content.mimetype || m.content.type) : '';
-          const fn = m.content && m.content.filename ? String(m.content.filename) : '';
+          const fn = m.content && m.content.filename ? displayFilename(m.content.filename) : '';
           const tag = /^image\//i.test(mime) ? '图片' : /^video\//i.test(mime) ? '视频' : '文件';
           return { tag, suffix: fn, text: '' };
         }
@@ -2675,6 +2727,7 @@ const app = createApp({
       isImageFile,
       isVideoFile,
       fileDisplayUrl,
+      messageFilename,
       openImagePreview,
       closeImagePreview,
       requestCloseImagePreview,

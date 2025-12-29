@@ -187,15 +187,15 @@
                       </template>
                       <template v-else-if="m.type==='file' && m.content && isImageFile(m)">
                         <img :src="fileDisplayUrl(m)" :alt="m.content.filename || 'image'" style="max-width:320px;max-height:240px;display:block;border-radius:8px;cursor:pointer" @click.stop="openImagePreview(fileDisplayUrl(m))" />
-                        <div v-if="m.content.filename" style="margin-top:6px;font-size:12px;color:#666">{{ m.content.filename }}</div>
+                        <div v-if="m.content.filename" style="margin-top:6px;font-size:12px;color:#666">{{ messageFilename(m) }}</div>
                       </template>
                       <template v-else-if="m.type==='file' && m.content && isVideoFile(m)">
                         <video :src="fileDisplayUrl(m)" controls style="max-width:320px;max-height:240px;display:block;border-radius:8px" :poster="m.content.thumbnailUrl || ''"></video>
-                        <div v-if="m.content.filename" style="margin-top:6px;font-size:12px;color:#666">{{ m.content.filename }}</div>
+                        <div v-if="m.content.filename" style="margin-top:6px;font-size:12px;color:#666">{{ messageFilename(m) }}</div>
                       </template>
                       <template v-else-if="m.type==='file' && m.content && m.content.url">
                         <a :href="m.content.url" target="_blank" rel="noopener" style="color:#0366d6;text-decoration:none">
-                          {{ m.content.filename || '下载文件' }}
+                          {{ messageFilename(m) || '下载文件' }}
                         </a>
                       </template>
                       <template v-else>
