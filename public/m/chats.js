@@ -6,6 +6,7 @@ const app = createApp({
     const apiBase = ref('');
     const token = ref(localStorage.getItem('token') || null);
     const chats = ref([]);
+    const chatsLoading = ref(false);
     const chatUnreadMap = reactive({});
     const selfUserId = ref(null);
     const selfFaceUrl = ref('');
@@ -541,10 +542,15 @@ const app = createApp({
     }
 
     onMounted(async () => {
-      await fetchConfig();
-      await resolveSelfProfile();
-      await loadChats();
-      await hydrateChatPeerProfiles();
+      chatsLoading.value = true;
+      try {
+        await fetchConfig();
+        await resolveSelfProfile();
+        await loadChats();
+        await hydrateChatPeerProfiles();
+      } finally {
+        chatsLoading.value = false;
+      }
 
       connectSocket();
       joinAllChatRooms();
@@ -552,6 +558,7 @@ const app = createApp({
 
     return {
       chats,
+      chatsLoading,
       selfFaceUrl,
       getChatName,
       getChatAvatar,

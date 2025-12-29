@@ -8,6 +8,7 @@ const app = createApp({
     const users = ref([]);
     const q = ref('');
     const selfUserId = ref(null);
+    const usersLoading = ref(false);
 
     const filtered = computed(() => {
       const query = (q.value || '').trim().toLowerCase();
@@ -118,9 +119,14 @@ const app = createApp({
     }
 
     onMounted(async () => {
-      await fetchConfig();
-      await resolveSelfProfile();
-      await loadUsers();
+      usersLoading.value = true;
+      try {
+        await fetchConfig();
+        await resolveSelfProfile();
+        await loadUsers();
+      } finally {
+        usersLoading.value = false;
+      }
     });
 
     return {
@@ -129,6 +135,7 @@ const app = createApp({
       q,
       openChat,
       onInput,
+      usersLoading,
     };
   },
 });

@@ -9,6 +9,7 @@ const app = createApp({
     const sessionOk = ref(false);
 
     const chats = ref([]);
+    const chatsLoading = ref(false);
     const chatUnreadMap = reactive({});
     const currentChatId = ref(null);
     const currentChatTitle = ref('');
@@ -1410,6 +1411,7 @@ const app = createApp({
     });
 
     async function loadChats() {
+      chatsLoading.value = true;
       try {
         if (!usersIndexLoaded.value) {
           await loadUsersIndex();
@@ -1437,6 +1439,8 @@ const app = createApp({
       } catch (e) {
         console.error(e);
         ElementPlus.ElMessage.error('加载会话失败，请检查登录状态');
+      } finally {
+        chatsLoading.value = false;
       }
     }
 
@@ -1877,6 +1881,7 @@ const app = createApp({
     return {
       // state
       chats,
+      chatsLoading,
       chatUnreadMap,
       currentChatId,
       currentChatTitle,

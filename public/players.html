@@ -26,17 +26,32 @@
         </el-header>
         <el-main style="padding:12px">
           <el-input v-model="q" placeholder="搜索玩家（用户名/部分匹配）" clearable @input="onInput"></el-input>
-          <div style="margin-top:12px">
-            <div v-for="u in filtered" :key="u.id" style="display:flex;justify-content:space-between;align-items:center;padding:8px;border-bottom:1px solid #eee">
+          <el-skeleton animated :loading="usersLoading" style="margin-top:12px">
+            <template #template>
+              <div v-for="i in 8" :key="i" style="display:flex;justify-content:space-between;align-items:center;padding:8px;border-bottom:1px solid #eee">
+                <div style="flex:1;min-width:0">
+                  <el-skeleton-item variant="text" style="width:160px"></el-skeleton-item>
+                  <div style="margin-top:6px">
+                    <el-skeleton-item variant="text" style="width:120px"></el-skeleton-item>
+                  </div>
+                </div>
+                <el-skeleton-item variant="rect" style="width:56px;height:24px;border-radius:4px"></el-skeleton-item>
+              </div>
+            </template>
+            <template #default>
               <div>
-                <div style="font-weight:600">{{ u.username || u.id }}</div>
+                <div v-for="u in filtered" :key="u.id" style="display:flex;justify-content:space-between;align-items:center;padding:8px;border-bottom:1px solid #eee">
+                  <div>
+                    <div style="font-weight:600">{{ u.username || u.id }}</div>
 					<div style="font-size:12px;color:#888">{{ u.mcUuid || '' }}</div>
+                  </div>
+                  <div>
+                    <el-button size="small" type="primary" @click="openChat(u.id)">私聊</el-button>
+                  </div>
+                </div>
               </div>
-              <div>
-                <el-button size="small" type="primary" @click="openChat(u.id)">私聊</el-button>
-              </div>
-            </div>
-          </div>
+            </template>
+          </el-skeleton>
         </el-main>
       </el-container>
     </div>

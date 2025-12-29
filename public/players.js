@@ -9,6 +9,7 @@ createApp({
     const q = ref('');
     const users = ref([]);
     const filtered = ref([]);
+    const usersLoading = ref(false);
 
     function tokenValue(){
       const t = (token.value || '').trim();
@@ -95,6 +96,7 @@ createApp({
 
     async function fetchConfig(){ const conf = await fetch('/config').then(r=>r.json()); apiBase.value = conf.apiProxyBase || conf.apiBase; }
     async function loadUsers(){
+      usersLoading.value = true;
       try{
         const res = await safeFetch(`${apiBase.value}/users`);
         if(res.status === 204){
@@ -129,6 +131,8 @@ createApp({
       }catch(e){
         console.error(e);
         alert('无法加载玩家列表：' + (e && e.message ? e.message : e));
+      }finally{
+        usersLoading.value = false;
       }
     }
 
@@ -156,6 +160,6 @@ createApp({
     function logout(){ token.value=null; localStorage.removeItem('token'); window.location.href = '/'; }
 
     onMounted(async ()=>{ await fetchConfig(); await loadUsers(); });
-    return { q, filtered, onInput, openChat, logout, onNav, selfFaceUrl };
+    return { q, filtered, onInput, openChat, logout, onNav, selfFaceUrl, usersLoading };
   }
 }).use(ElementPlus).mount('#app');
