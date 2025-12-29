@@ -1,5 +1,5 @@
 // Mobile players page
-const { createApp, ref, computed, onMounted } = Vue;
+const { createApp, ref, reactive, computed, onMounted } = Vue;
 
 const app = createApp({
   setup() {
@@ -9,6 +9,11 @@ const app = createApp({
     const q = ref('');
     const selfUserId = ref(null);
     const usersLoading = ref(false);
+
+    const groupMode = ref(false);
+    const groupName = ref('');
+    const selectedMap = reactive({});
+    const createGroupLoading = ref(false);
 
     const filtered = computed(() => {
       const query = (q.value || '').trim().toLowerCase();
@@ -70,7 +75,7 @@ const app = createApp({
         const all = await res.json();
         users.value = all.map(u => ({
           ...u,
-          faceUrl: u.faceUrl || u.face_url || u.face || '',
+          faceUrl: u.faceUrl || u.face_url || u.face || u.face_key || '',
           mcUuid: extractMinecraftUuid(u),
         }));
       } catch (e) {}
@@ -83,6 +88,72 @@ const app = createApp({
         const me = await res.json();
         selfUserId.value = me.id;
       } catch (e) {}
+    }
+
+    function enterGroupMode() {
+      groupMode.value = true;
+      groupName.value = '';
+      for (const k of Object.keys(selectedMap)) delete selectedMap[k];
+    }
+
+    function cancelGroupMode() {
+      groupMode.value = false;
+      groupName.value = '';
+      for (const k of Object.keys(selectedMap)) delete selectedMap[k];
+    }
+
+    function isSelected(userId) {
+      const id = userId !== undefined && userId !== null ? String(userId) : '';
+      return id ? !!selectedMap[id] : false;
+    }
+
+    function setSelected(userId, val) {
+      const id = userId !== undefined && userId !== null ? String(userId) : '';
+      if (!id) return;
+      selectedMap[id] = !!val;
+    }
+
+    const selectedCount = computed(() => {
+      try {
+        return Object.values(selectedMap).filter(Boolean).length;
+      } catch (e) {
+        return 0;
+      }
+    });
+
+    async function createGroupChat() {
+      if (createGroupLoading.value) return;
+      const picked = Object.entries(selectedMap)
+        .filter(([, v]) => !!v)
+        .map(([k]) => String(k));
+      const selfId = selfUserId.value ? String(selfUserId.value) : null;
+      const members = picked.filter((id) => !selfId || String(id) !== String(selfId));
+      if (members.length < 2) {
+        ElementPlus.ElMessage.warning('创建群聊需要至少选择 2 位其他玩家');
+        return;
+      }
+
+      createGroupLoading.value = true;
+      try {
+        const base = String(apiBase.value || '').replace(/\/$/, '');
+        const res = await safeFetch(`${base}/chats/group`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: (groupName.value || '').trim() || null, members }),
+        });
+        if (!res.ok) throw new Error('创建群聊失败');
+        const chat = await res.json().catch(() => null);
+        const chatId =
+          (chat && (chat.id || chat.chatId)) ||
+          (chat && chat.chat && (chat.chat.id || chat.chat.chatId)) ||
+          null;
+        if (!chatId) throw new Error('no chatId');
+        window.location.href = `/m/chat_detail.html?chat=${encodeURIComponent(chatId)}`;
+      } catch (e) {
+        ElementPlus.ElMessage.error('创建群聊失败');
+      } finally {
+        createGroupLoading.value = false;
+      }
     }
 
     async function openChat(userId) {
@@ -136,6 +207,17 @@ const app = createApp({
       openChat,
       onInput,
       usersLoading,
+      // group
+      selfUserId,
+      groupMode,
+      groupName,
+      selectedCount,
+      createGroupLoading,
+      enterGroupMode,
+      cancelGroupMode,
+      isSelected,
+      setSelected,
+      createGroupChat,
     };
   },
 });

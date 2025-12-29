@@ -27,8 +27,22 @@ app.use(
     changeOrigin: true,
     ws: true,
     secure: false,
-    pathRewrite: { '^/api': '' },
+    pathRewrite: (path) => {
+      // Backend is mounted at /chats/... (not /api/chats), so strip /api prefix.
+      // Also map our /api/socket.io -> backend /socket.io
+      if (path.startsWith('/api/socket.io')) return path.replace('/api/socket.io', '/socket.io');
+      return path.replace(/^\/api/, '');
+    },
     cookieDomainRewrite: '',
+    onError: (err, req, res) => {
+      try {
+        console.error('[proxy] error', err && err.message ? err.message : err);
+      } catch (e) {}
+      try {
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Bad gateway', message: String(err && err.message ? err.message : err) }));
+      } catch (e) {}
+    },
   })
 );
 

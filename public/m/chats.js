@@ -218,15 +218,25 @@ const app = createApp({
         if (socket.value && socket.value.connected) return;
         if (typeof window === 'undefined' || !window.io) return;
 
+        const rawApiBase = String(apiBase.value || '').trim();
+        const useDirect = /^https?:\/\//i.test(rawApiBase);
+        let socketUrl = window.location.origin;
+        try {
+          if (useDirect) socketUrl = new URL(rawApiBase).origin;
+        } catch (e) {
+          if (useDirect) socketUrl = rawApiBase.replace(/\/$/, '');
+        }
+        const socketPath = useDirect ? '/socket.io' : '/api/socket.io';
+
         const opts = {
-          path: '/api/socket.io',
+          path: socketPath,
           transports: ['websocket', 'polling'],
           withCredentials: true,
         };
         const t = tokenValue();
         if (t) opts.auth = { token: t };
 
-        const s = window.io(window.location.origin, opts);
+        const s = window.io(socketUrl, opts);
         socket.value = s;
 
         s.on('connect', () => {
@@ -241,8 +251,8 @@ const app = createApp({
             try { clearBadToken(); } catch (e) {}
             try { s.disconnect(); } catch (e) {}
             try {
-              const s2 = window.io(window.location.origin, {
-                path: '/api/socket.io',
+              const s2 = window.io(socketUrl, {
+                path: socketPath,
                 transports: ['websocket', 'polling'],
                 withCredentials: true,
               });

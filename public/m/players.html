@@ -23,10 +23,21 @@
     <div id="app" v-cloak>
       <div class="top-bar">
         <h3 style="margin:0">玩家</h3>
+        <div>
+          <el-button v-if="!groupMode" size="small" type="primary" plain @click="enterGroupMode">群聊</el-button>
+          <el-button v-else size="small" @click="cancelGroupMode">取消</el-button>
+        </div>
       </div>
 
       <div class="content-area">
         <el-input v-model="q" placeholder="搜索玩家" clearable @input="onInput" style="margin-bottom:12px"></el-input>
+
+        <div v-if="groupMode" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+          <el-input v-model="groupName" size="small" placeholder="群聊名称（可选）" style="flex:1;min-width:160px"></el-input>
+          <el-button size="small" type="primary" :loading="createGroupLoading" :disabled="selectedCount < 2" @click="createGroupChat">创建</el-button>
+          <span style="font-size:12px;color:#888">已选 {{ selectedCount }} 人</span>
+        </div>
+
         <el-skeleton animated :loading="usersLoading">
           <template #template>
             <div v-for="i in 8" :key="i" class="player-item">
@@ -45,6 +56,12 @@
           <template #default>
             <div v-for="u in filtered" :key="u.id" class="player-item">
               <div style="display:flex;align-items:center;gap:10px;flex:1">
+                <el-checkbox
+                  v-if="groupMode"
+                  :model-value="isSelected(u.id)"
+                  :disabled="selfUserId && String(u.id)===String(selfUserId)"
+                  @change="(val)=>setSelected(u.id, val)"
+                ></el-checkbox>
                 <el-avatar v-if="u.faceUrl" shape="square" :src="u.faceUrl" :size="40"></el-avatar>
                 <el-avatar v-else shape="square" :size="40">{{ (u.username || u.id).charAt(0).toUpperCase() }}</el-avatar>
                 <div>

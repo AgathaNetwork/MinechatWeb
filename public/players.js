@@ -6,10 +6,16 @@ createApp({
     const apiBase = ref('');
     const token = ref(localStorage.getItem('token') || null);
     const selfFaceUrl = ref('');
+    const selfUserId = ref(null);
     const q = ref('');
     const users = ref([]);
     const filtered = ref([]);
     const usersLoading = ref(false);
+
+    const groupMode = ref(false);
+    const groupName = ref('');
+    const selectedMap = ref({});
+    const createGroupLoading = ref(false);
 
     function tokenValue(){
       const t = (token.value || '').trim();
@@ -71,13 +77,16 @@ createApp({
         if(res.ok){
           const me = await res.json().catch(()=>null);
           if(me && typeof me === 'object'){
-            const face = me.faceUrl || me.face_url || me.face;
-            if(face){ selfFaceUrl.value = String(face); return; }
             const meId = me.id || me.userId || me.uid;
+            if(meId !== undefined && meId !== null) selfUserId.value = String(meId);
+            const face = me.faceUrl || me.face_url || me.face;
+            const f2 = face || me.face_key;
+            if(f2){ selfFaceUrl.value = String(f2); return; }
             if(meId){
               const u = users.value.find(x => x && String(x.id) === String(meId));
               const f = u && (u.faceUrl || u.face_url || u.face);
-              if(f){ selfFaceUrl.value = String(f); return; }
+              const f3 = f || (u && u.face_key);
+              if(f3){ selfFaceUrl.value = String(f3); return; }
             }
           }
         }
@@ -89,9 +98,11 @@ createApp({
       const payload = decodeJwtPayload(t);
       const meId = payload && (payload.userId || payload.uid || payload.id || payload.sub);
       if(!meId) return;
+      selfUserId.value = String(meId);
       const u = users.value.find(x => x && String(x.id) === String(meId));
       const face = u && (u.faceUrl || u.face_url || u.face);
-      if(face) selfFaceUrl.value = String(face);
+      const f2 = face || (u && u.face_key);
+      if(f2) selfFaceUrl.value = String(f2);
     }
 
     async function fetchConfig(){ const conf = await fetch('/config').then(r=>r.json()); apiBase.value = conf.apiProxyBase || conf.apiBase; }
@@ -138,6 +149,71 @@ createApp({
 
     function onInput(){ const s = q.value.trim().toLowerCase(); if(!s){ filtered.value = users.value.slice(); return; } filtered.value = users.value.filter(u=> (u.username||u.id||'').toLowerCase().includes(s)); }
 
+    function enterGroupMode(){
+      groupMode.value = true;
+      groupName.value = '';
+      selectedMap.value = {};
+    }
+
+    function cancelGroupMode(){
+      groupMode.value = false;
+      groupName.value = '';
+      selectedMap.value = {};
+    }
+
+    function isSelected(userId){
+      const id = userId !== undefined && userId !== null ? String(userId) : '';
+      return id ? !!selectedMap.value[id] : false;
+    }
+
+    function setSelected(userId, val){
+      const id = userId !== undefined && userId !== null ? String(userId) : '';
+      if(!id) return;
+      selectedMap.value = Object.assign({}, selectedMap.value, { [id]: !!val });
+    }
+
+    function selectedCount(){
+      try{
+        return Object.values(selectedMap.value || {}).filter(Boolean).length;
+      }catch(e){
+        return 0;
+      }
+    }
+
+    async function createGroupChat(){
+      if(createGroupLoading.value) return;
+      const picked = Object.entries(selectedMap.value || {}).filter(([,v])=>!!v).map(([k])=>String(k));
+      const selfId = selfUserId.value ? String(selfUserId.value) : null;
+      const members = picked.filter(id => !selfId || String(id) !== String(selfId));
+      if(members.length < 2){
+        alert('创建群聊需要至少选择 2 位其他玩家');
+        return;
+      }
+
+      createGroupLoading.value = true;
+      try{
+        const base = String(apiBase.value || '').replace(/\/$/, '');
+        const res = await safeFetch(`${base}/chats/group`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: (groupName.value || '').trim() || null, members }),
+        });
+        if(!res.ok){
+          const txt = await res.text().catch(()=> '');
+          throw new Error(`create group failed: ${res.status} ${txt}`);
+        }
+        const chat = await res.json().catch(()=> null);
+        const chatId = chat && (chat.id || chat.chatId || (chat.chat && chat.chat.id) || (chat.chat && chat.chat.chatId));
+        if(!chatId) throw new Error('no chatId');
+        window.location.href = `/chat.html?open=${encodeURIComponent(chatId)}`;
+      }catch(e){
+        console.error(e);
+        alert('创建群聊失败：' + (e && e.message ? e.message : e));
+      }finally{
+        createGroupLoading.value = false;
+      }
+    }
+
     async function openChat(userId){
       try{
         const res = await safeFetch(`${apiBase.value}/chats/with/${encodeURIComponent(userId)}`, { method: 'POST' });
@@ -160,6 +236,26 @@ createApp({
     function logout(){ token.value=null; localStorage.removeItem('token'); window.location.href = '/'; }
 
     onMounted(async ()=>{ await fetchConfig(); await loadUsers(); });
-    return { q, filtered, onInput, openChat, logout, onNav, selfFaceUrl, usersLoading };
+    return {
+      q,
+      filtered,
+      onInput,
+      openChat,
+      logout,
+      onNav,
+      selfFaceUrl,
+      usersLoading,
+      // group
+      selfUserId,
+      groupMode,
+      groupName,
+      createGroupLoading,
+      enterGroupMode,
+      cancelGroupMode,
+      isSelected,
+      setSelected,
+      selectedCount,
+      createGroupChat,
+    };
   }
 }).use(ElementPlus).mount('#app');

@@ -44,6 +44,9 @@
         </el-button>
         <el-avatar v-if="currentChatFaceUrl" shape="square" :src="currentChatFaceUrl" :size="32"></el-avatar>
         <h3 style="margin:0;flex:1">{{ currentChatTitle }}</h3>
+        <el-button v-if="isGroupChat" @click="openGroupManage" circle size="small" style="flex-shrink:0" title="群聊管理">
+          <el-icon><more-filled /></el-icon>
+        </el-button>
       </div>
 
       <div class="messages-area" ref="messagesEl" @scroll="onMessagesScroll">
@@ -169,6 +172,73 @@
           </div>
         </div>
       </div>
+
+      <el-drawer v-model="groupManageVisible" title="群聊管理" direction="btt" size="70%">
+        <div v-if="groupManageLoading" style="padding:16px">
+          <el-skeleton animated :rows="5" />
+        </div>
+        <div v-else style="padding:0 4px">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <el-input v-model="groupEditName" placeholder="群聊名称" style="flex:1;min-width:180px"></el-input>
+            <el-button type="primary" size="small" :loading="groupActionLoading" :disabled="!groupCanManage" @click="saveGroupName">保存</el-button>
+          </div>
+          <div v-if="!groupCanManage" style="margin-top:6px;font-size:12px;color:#888">无权限修改</div>
+
+          <div style="margin-top:16px">
+            <div style="font-weight:600;margin-bottom:8px">邀请成员</div>
+            <el-select v-model="inviteSelected" multiple filterable placeholder="选择要邀请的玩家" style="width:100%">
+              <el-option v-for="u in inviteOptions" :key="u.id" :label="u.label" :value="u.id" />
+            </el-select>
+            <div style="margin-top:10px;display:flex;justify-content:flex-end">
+              <el-button type="primary" size="small" :loading="groupActionLoading" :disabled="!groupCanManage || inviteSelected.length===0" @click="inviteToGroup">邀请</el-button>
+            </div>
+          </div>
+
+          <div style="margin-top:16px">
+            <div style="font-weight:600;margin-bottom:8px">成员</div>
+            <div style="max-height:260px;overflow:auto;border:1px solid #eee;border-radius:8px;background:#fff">
+              <div v-for="mid in groupMembers" :key="mid" style="display:flex;align-items:center;justify-content:space-between;padding:10px 10px;border-bottom:1px solid #f3f3f3">
+                <div style="min-width:0">
+                  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                    <span style="font-weight:500">{{ userLabel(mid) }}</span>
+                    <el-tag v-if="String(mid)===String(groupOwnerId)" type="info" effect="plain" size="small">群主</el-tag>
+                    <el-tag v-else-if="groupAdmins.includes(String(mid))" type="info" effect="plain" size="small">管理员</el-tag>
+                  </div>
+                  <div style="font-size:12px;color:#888">{{ mid }}</div>
+                </div>
+                <el-button
+                  v-if="groupCanManage && String(mid)!==String(groupOwnerId) && String(mid)!==String(selfUserId)"
+                  size="small"
+                  type="danger"
+                  plain
+                  :loading="groupActionLoading"
+                  @click="kickFromGroup(mid)"
+                >移除</el-button>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="groupIsOwner" style="margin-top:16px">
+            <div style="font-weight:600;margin-bottom:8px">管理员</div>
+            <el-select v-model="adminSelected" multiple filterable placeholder="选择管理员（不包含群主）" style="width:100%">
+              <el-option v-for="u in adminOptions" :key="u.id" :label="u.label" :value="u.id" />
+            </el-select>
+            <div style="margin-top:10px;display:flex;justify-content:flex-end">
+              <el-button type="primary" size="small" :loading="groupActionLoading" @click="saveGroupAdmins">保存管理员</el-button>
+            </div>
+          </div>
+
+          <div v-if="groupIsOwner" style="margin-top:16px">
+            <div style="font-weight:600;margin-bottom:8px">转让群主</div>
+            <el-select v-model="transferOwnerId" filterable placeholder="选择新群主" style="width:100%">
+              <el-option v-for="u in transferOptions" :key="u.id" :label="u.label" :value="u.id" />
+            </el-select>
+            <div style="margin-top:10px;display:flex;justify-content:flex-end">
+              <el-button type="warning" size="small" :loading="groupActionLoading" :disabled="!transferOwnerId" @click="transferGroupOwner">转让</el-button>
+            </div>
+          </div>
+        </div>
+      </el-drawer>
     </div>
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>

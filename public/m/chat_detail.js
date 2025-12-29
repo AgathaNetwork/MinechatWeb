@@ -8,6 +8,7 @@ const app = createApp({
     const currentChatId = ref(null);
     const currentChatTitle = ref('');
     const currentChatFaceUrl = ref('');
+    const currentChatMeta = ref(null);
     const messages = ref([]);
     const msgById = reactive({});
     const userNameCache = reactive({});
@@ -51,11 +52,101 @@ const app = createApp({
     const messagesEl = ref(null);
     const chatLoading = ref(false);
 
+    // Group management
+    const groupManageVisible = ref(false);
+    const groupManageLoading = ref(false);
+    const groupActionLoading = ref(false);
+    const groupOwnerId = ref(null);
+    const groupAdmins = ref([]);
+    const groupEditName = ref('');
+    const inviteSelected = ref([]);
+    const adminSelected = ref([]);
+    const transferOwnerId = ref('');
+    const allUsersList = ref([]);
+
     const loadingMore = ref(false);
     const noMoreBefore = ref(false);
     const PAGE_LIMIT = 20;
     const INITIAL_LIMIT = 50;
     const isGlobalChat = computed(() => currentChatId.value === 'global');
+
+    const isGroupChat = computed(() => {
+      try {
+        if (!currentChatMeta.value || typeof currentChatMeta.value !== 'object') return false;
+        return String(currentChatMeta.value.type || '').toLowerCase() === 'group';
+      } catch (e) {
+        return false;
+      }
+    });
+
+    const groupIsOwner = computed(() => {
+      if (!selfUserId.value || !groupOwnerId.value) return false;
+      return String(selfUserId.value) === String(groupOwnerId.value);
+    });
+
+    const groupIsAdmin = computed(() => {
+      if (!selfUserId.value) return false;
+      const sid = String(selfUserId.value);
+      return (groupAdmins.value || []).map(String).includes(sid);
+    });
+
+    const groupCanManage = computed(() => {
+      return !!(groupIsOwner.value || groupIsAdmin.value);
+    });
+
+    const groupMembers = computed(() => {
+      try {
+        const m = currentChatMeta.value && (currentChatMeta.value.members || currentChatMeta.value.memberIds);
+        const arr = Array.isArray(m) ? m.map(String) : [];
+        const owner = groupOwnerId.value ? String(groupOwnerId.value) : null;
+        if (owner && arr.includes(owner)) return [owner].concat(arr.filter((x) => x !== owner));
+        return arr;
+      } catch (e) {
+        return [];
+      }
+    });
+
+    function userLabel(userId) {
+      try {
+        const id = userId !== undefined && userId !== null ? String(userId) : '';
+        if (!id) return '';
+        return userNameCache[id] || id;
+      } catch (e) {
+        return String(userId || '');
+      }
+    }
+
+    const inviteOptions = computed(() => {
+      const members = new Set((groupMembers.value || []).map(String));
+      return (allUsersList.value || [])
+        .map((u) => ({
+          id: String(u.id),
+          label: (u.username || u.displayName || u.name || userNameCache[String(u.id)] || String(u.id)) + ` (${String(u.id)})`,
+        }))
+        .filter((u) => !members.has(String(u.id)));
+    });
+
+    const adminOptions = computed(() => {
+      const owner = groupOwnerId.value ? String(groupOwnerId.value) : '';
+      const members = new Set((groupMembers.value || []).map(String));
+      return (allUsersList.value || [])
+        .map((u) => ({
+          id: String(u.id),
+          label: (u.username || u.displayName || u.name || userNameCache[String(u.id)] || String(u.id)) + ` (${String(u.id)})`,
+        }))
+        .filter((u) => members.has(String(u.id)) && String(u.id) !== owner);
+    });
+
+    const transferOptions = computed(() => {
+      const owner = groupOwnerId.value ? String(groupOwnerId.value) : '';
+      const members = new Set((groupMembers.value || []).map(String));
+      return (allUsersList.value || [])
+        .map((u) => ({
+          id: String(u.id),
+          label: (u.username || u.displayName || u.name || userNameCache[String(u.id)] || String(u.id)) + ` (${String(u.id)})`,
+        }))
+        .filter((u) => members.has(String(u.id)) && String(u.id) !== owner);
+    });
     const socket = ref(null);
     const joinedChatId = ref(null);
     const replyTarget = ref(null);
@@ -100,6 +191,10 @@ const app = createApp({
     async function fetchConfig() {
       const conf = await fetch('/config').then((r) => r.json());
       apiBase.value = conf.apiProxyBase || conf.apiBase || '';
+    }
+
+    function apiGroupBase() {
+      return String(apiBase.value || '').replace(/\/$/, '');
     }
 
     function buildMessagesUrl(chatId, opts) {
@@ -166,10 +261,181 @@ const app = createApp({
         users.forEach(u => {
           const id = String(u.id);
           userNameCache[id] = u.username || u.id;
-          const face = normalizeFaceUrl(u.faceUrl || u.face_url || u.face || '');
+          const face = normalizeFaceUrl(u.faceUrl || u.face_url || u.face || u.face_key || '');
           if (face) userFaceCache[id] = face;
         });
       } catch (e) {}
+    }
+
+    async function loadAllUsersList() {
+      try {
+        const res = await safeFetch(`${apiBase.value}/users`);
+        if (!res.ok) return;
+        const list = await res.json().catch(() => null);
+        if (!Array.isArray(list)) return;
+        allUsersList.value = list
+          .filter((u) => u && typeof u === 'object' && (u.id !== undefined && u.id !== null))
+          .map((u) => ({ id: String(u.id), username: u.username || u.displayName || u.name || String(u.id) }));
+      } catch (e) {}
+    }
+
+    async function refreshGroupInfo(chatId) {
+      if (!chatId) return;
+      try {
+        const res = await safeFetch(`${apiGroupBase()}/chats/${encodeURIComponent(chatId)}`);
+        if (!res.ok) return;
+        const meta = await res.json().catch(() => null);
+        if (meta && typeof meta === 'object') {
+          currentChatMeta.value = meta;
+          if (String(meta.type || '').toLowerCase() === 'group') {
+            currentChatTitle.value = meta.displayName || meta.name || '群聊';
+            groupOwnerId.value = meta.created_by !== undefined && meta.created_by !== null ? String(meta.created_by) : groupOwnerId.value;
+          }
+        }
+      } catch (e) {}
+    }
+
+    async function loadGroupAdmins(chatId) {
+      if (!chatId) return;
+      try {
+        const res = await safeFetch(`${apiGroupBase()}/chats/${encodeURIComponent(chatId)}/admins`);
+        if (!res.ok) return;
+        const data = await res.json().catch(() => null);
+        if (!data || typeof data !== 'object') return;
+        groupOwnerId.value = data.ownerId !== undefined && data.ownerId !== null ? String(data.ownerId) : groupOwnerId.value;
+        groupAdmins.value = Array.isArray(data.admins) ? data.admins.map(String) : [];
+      } catch (e) {}
+    }
+
+    async function openGroupManage() {
+      if (!isGroupChat.value || !currentChatId.value || currentChatId.value === 'global') return;
+      groupManageVisible.value = true;
+      groupManageLoading.value = true;
+      inviteSelected.value = [];
+      transferOwnerId.value = '';
+      try {
+        await Promise.all([refreshGroupInfo(currentChatId.value), loadGroupAdmins(currentChatId.value), loadAllUsersList()]);
+        const meta = currentChatMeta.value;
+        groupEditName.value = (meta && (meta.name || meta.displayName)) ? String(meta.name || meta.displayName) : '';
+        adminSelected.value = (groupAdmins.value || []).map(String);
+      } finally {
+        groupManageLoading.value = false;
+      }
+    }
+
+    async function saveGroupName() {
+      if (!groupCanManage.value) return;
+      if (!currentChatId.value) return;
+      groupActionLoading.value = true;
+      try {
+        const res = await safeFetch(`${apiGroupBase()}/chats/${encodeURIComponent(currentChatId.value)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: (groupEditName.value || '').trim() || null }),
+        });
+        if (!res.ok) throw new Error('save name failed');
+        const updated = await res.json().catch(() => null);
+        if (updated && typeof updated === 'object') {
+          currentChatMeta.value = updated;
+          currentChatTitle.value = updated.displayName || updated.name || '群聊';
+          ElementPlus.ElMessage.success('已保存');
+        }
+      } catch (e) {
+        ElementPlus.ElMessage.error('保存失败');
+      } finally {
+        groupActionLoading.value = false;
+      }
+    }
+
+    async function inviteToGroup() {
+      if (!groupCanManage.value) return;
+      if (!currentChatId.value) return;
+      const ids = (inviteSelected.value || []).map(String).filter(Boolean);
+      if (ids.length === 0) return;
+      groupActionLoading.value = true;
+      try {
+        const res = await safeFetch(`${apiGroupBase()}/chats/${encodeURIComponent(currentChatId.value)}/invite`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userIds: ids }),
+        });
+        if (!res.ok) throw new Error('invite failed');
+        inviteSelected.value = [];
+        await Promise.all([refreshGroupInfo(currentChatId.value), loadGroupAdmins(currentChatId.value)]);
+        ElementPlus.ElMessage.success('已邀请');
+      } catch (e) {
+        ElementPlus.ElMessage.error('邀请失败');
+      } finally {
+        groupActionLoading.value = false;
+      }
+    }
+
+    async function kickFromGroup(userId) {
+      if (!groupCanManage.value) return;
+      if (!currentChatId.value) return;
+      const uid = userId !== undefined && userId !== null ? String(userId) : '';
+      if (!uid) return;
+      groupActionLoading.value = true;
+      try {
+        const res = await safeFetch(`${apiGroupBase()}/chats/${encodeURIComponent(currentChatId.value)}/kick`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userIds: [uid] }),
+        });
+        if (!res.ok) throw new Error('kick failed');
+        await Promise.all([refreshGroupInfo(currentChatId.value), loadGroupAdmins(currentChatId.value)]);
+        ElementPlus.ElMessage.success('已移除');
+      } catch (e) {
+        ElementPlus.ElMessage.error('移除失败');
+      } finally {
+        groupActionLoading.value = false;
+      }
+    }
+
+    async function saveGroupAdmins() {
+      if (!groupIsOwner.value) return;
+      if (!currentChatId.value) return;
+      const ids = (adminSelected.value || []).map(String).filter(Boolean);
+      groupActionLoading.value = true;
+      try {
+        const res = await safeFetch(`${apiGroupBase()}/chats/${encodeURIComponent(currentChatId.value)}/admins`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admins: ids }),
+        });
+        if (!res.ok) throw new Error('save admins failed');
+        const data = await res.json().catch(() => null);
+        groupOwnerId.value = data && data.ownerId ? String(data.ownerId) : groupOwnerId.value;
+        groupAdmins.value = data && Array.isArray(data.admins) ? data.admins.map(String) : groupAdmins.value;
+        ElementPlus.ElMessage.success('已保存');
+      } catch (e) {
+        ElementPlus.ElMessage.error('保存失败');
+      } finally {
+        groupActionLoading.value = false;
+      }
+    }
+
+    async function transferGroupOwner() {
+      if (!groupIsOwner.value) return;
+      if (!currentChatId.value) return;
+      const nid = transferOwnerId.value ? String(transferOwnerId.value) : '';
+      if (!nid) return;
+      groupActionLoading.value = true;
+      try {
+        const res = await safeFetch(`${apiGroupBase()}/chats/${encodeURIComponent(currentChatId.value)}/transfer`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ newOwnerId: nid }),
+        });
+        if (!res.ok) throw new Error('transfer failed');
+        transferOwnerId.value = '';
+        await Promise.all([refreshGroupInfo(currentChatId.value), loadGroupAdmins(currentChatId.value)]);
+        ElementPlus.ElMessage.success('已转让');
+      } catch (e) {
+        ElementPlus.ElMessage.error('转让失败');
+      } finally {
+        groupActionLoading.value = false;
+      }
     }
 
     function decodeJwtPayload(jwt) {
@@ -1064,15 +1330,25 @@ const app = createApp({
 
     function connectSocket() {
       if (socket.value?.connected) return;
+      const rawApiBase = String(apiBase.value || '').trim();
+      const useDirect = /^https?:\/\//i.test(rawApiBase);
+      let socketUrl = window.location.origin;
+      try {
+        if (useDirect) socketUrl = new URL(rawApiBase).origin;
+      } catch (e) {
+        if (useDirect) socketUrl = rawApiBase.replace(/\/$/, '');
+      }
+      const socketPath = useDirect ? '/socket.io' : '/api/socket.io';
+
       const opts = {
-        path: '/api/socket.io',
+        path: socketPath,
         transports: ['websocket', 'polling'],
         withCredentials: true,
       };
       const t = token.value;
       if (t) opts.auth = { token: t };
 
-      const s = window.io(window.location.origin, opts);
+      const s = window.io(socketUrl, opts);
       socket.value = s;
 
       s.on('connect', () => {
@@ -1165,6 +1441,7 @@ const app = createApp({
     async function openChat(id) {
       chatLoading.value = true;
       currentChatId.value = id;
+      currentChatMeta.value = null;
       const isGlobal = id === 'global';
 
       loadingMore.value = false;
@@ -1178,7 +1455,13 @@ const app = createApp({
           const metaRes = await safeFetch(`${apiBase.value}/chats/${encodeURIComponent(id)}`);
           if (metaRes.ok) {
             const chatMeta = await metaRes.json();
+            currentChatMeta.value = chatMeta;
             currentChatTitle.value = chatMeta.displayName || chatMeta.name || '';
+            if (String(chatMeta.type || '').toLowerCase() === 'group') {
+              currentChatTitle.value = chatMeta.displayName || chatMeta.name || '群聊';
+              groupOwnerId.value = chatMeta.created_by !== undefined && chatMeta.created_by !== null ? String(chatMeta.created_by) : groupOwnerId.value;
+              try { loadGroupAdmins(id); } catch (e) {}
+            }
             const members = chatMeta.members || chatMeta.memberIds || [];
             if (selfUserId.value) {
               const selfId = String(selfUserId.value);
@@ -1547,6 +1830,31 @@ const app = createApp({
       replyPreview,
       emojiPanelVisible,
       emojiPacks,
+      // group management
+      isGroupChat,
+      openGroupManage,
+      groupManageVisible,
+      groupManageLoading,
+      groupActionLoading,
+      groupOwnerId,
+      groupAdmins,
+      groupEditName,
+      groupMembers,
+      groupIsOwner,
+      groupCanManage,
+      inviteSelected,
+      inviteOptions,
+      adminSelected,
+      adminOptions,
+      transferOwnerId,
+      transferOptions,
+      saveGroupName,
+      inviteToGroup,
+      kickFromGroup,
+      saveGroupAdmins,
+      transferGroupOwner,
+      userLabel,
+      selfUserId,
       ctxMenuVisible,
       ctxMenuX,
       ctxMenuY,
