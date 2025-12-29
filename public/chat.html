@@ -260,6 +260,18 @@
                   <span v-if="!groupCanManage" style="font-size:12px;color:#888">无权限修改</span>
                 </div>
 
+                <div v-if="groupCanManage" style="margin-top:12px">
+                  <input ref="groupAvatarInputEl" type="file" accept="image/*" style="display:none" @change="onGroupAvatarSelected" />
+                  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <el-avatar v-if="currentChatFaceUrl" shape="square" :src="currentChatFaceUrl" :size="36"></el-avatar>
+                      <el-avatar v-else shape="square" :size="36">群</el-avatar>
+                      <div style="font-size:12px;color:#888">群头像</div>
+                    </div>
+                    <el-button type="primary" plain :loading="groupActionLoading" @click="openGroupAvatarPicker">设置群头像</el-button>
+                  </div>
+                </div>
+
                 <div style="margin-top:16px">
                   <div style="font-weight:600;margin-bottom:8px">邀请成员</div>
                   <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">

@@ -64,6 +64,8 @@ const app = createApp({
     const transferOwnerId = ref('');
     const allUsersList = ref([]);
 
+    const groupAvatarInputEl = ref(null);
+
     const loadingMore = ref(false);
     const noMoreBefore = ref(false);
     const PAGE_LIMIT = 20;
@@ -173,6 +175,16 @@ const app = createApp({
         const base = String(apiBase.value || '').replace(/\/$/, '');
         if (base && base !== '/') return base + '/' + u;
         return u;
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function extractChatAvatarUrl(chat) {
+      try {
+        if (!chat || typeof chat !== 'object') return '';
+        const raw = chat.avatarUrl || chat.avatar_url || chat.avatar || '';
+        return normalizeFaceUrl(raw);
       } catch (e) {
         return '';
       }
@@ -290,6 +302,11 @@ const app = createApp({
           if (String(meta.type || '').toLowerCase() === 'group') {
             currentChatTitle.value = meta.displayName || meta.name || '群聊';
             groupOwnerId.value = meta.created_by !== undefined && meta.created_by !== null ? String(meta.created_by) : groupOwnerId.value;
+
+            try {
+              const av = extractChatAvatarUrl(meta);
+              if (av) currentChatFaceUrl.value = av;
+            } catch (e) {}
           }
         }
       } catch (e) {}
@@ -305,6 +322,63 @@ const app = createApp({
         groupOwnerId.value = data.ownerId !== undefined && data.ownerId !== null ? String(data.ownerId) : groupOwnerId.value;
         groupAdmins.value = Array.isArray(data.admins) ? data.admins.map(String) : [];
       } catch (e) {}
+    }
+
+    function openGroupAvatarPicker() {
+      try {
+        if (!groupCanManage.value) return;
+        const el = groupAvatarInputEl.value;
+        if (!el) return;
+        el.value = '';
+        el.click();
+      } catch (e) {}
+    }
+
+    async function onGroupAvatarSelected(evt) {
+      try {
+        const input = evt && evt.target;
+        const file = input && input.files && input.files[0];
+        if (!file) return;
+        await uploadGroupAvatar(file);
+      } finally {
+        try {
+          if (evt && evt.target) evt.target.value = '';
+        } catch (e) {}
+      }
+    }
+
+    async function uploadGroupAvatar(file) {
+      if (!groupCanManage.value) return;
+      if (!currentChatId.value || currentChatId.value === 'global') return;
+      if (!file) return;
+      if (file.type && !String(file.type).startsWith('image/')) {
+        ElementPlus.ElMessage.error('请选择图片文件');
+        return;
+      }
+
+      groupActionLoading.value = true;
+      try {
+        const fd = new FormData();
+        fd.append('file', file, file.name || 'avatar.png');
+        const res = await safeFetch(`${apiGroupBase()}/chats/${encodeURIComponent(currentChatId.value)}/avatar`, {
+          method: 'POST',
+          body: fd,
+        });
+        if (!res.ok) throw new Error('upload avatar failed');
+        const updated = await res.json().catch(() => null);
+        if (updated && typeof updated === 'object') {
+          currentChatMeta.value = Object.assign({}, currentChatMeta.value || {}, updated);
+          try {
+            const av = extractChatAvatarUrl(updated);
+            if (av) currentChatFaceUrl.value = av;
+          } catch (e) {}
+        }
+        ElementPlus.ElMessage.success('群头像已更新');
+      } catch (e) {
+        ElementPlus.ElMessage.error('设置群头像失败');
+      } finally {
+        groupActionLoading.value = false;
+      }
     }
 
     async function openGroupManage() {
@@ -1646,13 +1720,19 @@ const app = createApp({
             const chatMeta = await metaRes.json();
             currentChatMeta.value = chatMeta;
             currentChatTitle.value = chatMeta.displayName || chatMeta.name || '';
-            if (String(chatMeta.type || '').toLowerCase() === 'group') {
+            const isGroup = String(chatMeta.type || '').toLowerCase() === 'group';
+            if (isGroup) {
               currentChatTitle.value = chatMeta.displayName || chatMeta.name || '群聊';
               groupOwnerId.value = chatMeta.created_by !== undefined && chatMeta.created_by !== null ? String(chatMeta.created_by) : groupOwnerId.value;
               try { loadGroupAdmins(id); } catch (e) {}
+
+              try {
+                const av = extractChatAvatarUrl(chatMeta);
+                if (av) currentChatFaceUrl.value = av;
+              } catch (e) {}
             }
             const members = chatMeta.members || chatMeta.memberIds || [];
-            if (selfUserId.value) {
+            if (!isGroup && selfUserId.value) {
               const selfId = String(selfUserId.value);
               if (Array.isArray(members) && members.length === 1 && String(members[0]) === selfId) {
                 currentChatFaceUrl.value = getCachedFaceUrl(selfId);
@@ -2022,6 +2102,9 @@ const app = createApp({
       // group management
       isGroupChat,
       openGroupManage,
+      groupAvatarInputEl,
+      openGroupAvatarPicker,
+      onGroupAvatarSelected,
       groupManageVisible,
       groupManageLoading,
       groupActionLoading,

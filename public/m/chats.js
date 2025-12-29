@@ -95,6 +95,16 @@ const app = createApp({
       }
     }
 
+    function extractChatAvatarUrl(chat) {
+      try {
+        if (!chat || typeof chat !== 'object') return '';
+        const raw = chat.avatarUrl || chat.avatar_url || chat.avatar || '';
+        return normalizeFaceUrl(raw);
+      } catch (e) {
+        return '';
+      }
+    }
+
     async function fetchUserById(userId) {
       const id = userId !== undefined && userId !== null ? String(userId) : '';
       if (!id) return null;
@@ -583,6 +593,14 @@ const app = createApp({
     }
 
     function getChatAvatar(chat) {
+      try {
+        const t = chat && chat.type !== undefined && chat.type !== null ? String(chat.type).toLowerCase() : '';
+        if (t === 'group') {
+          const a = extractChatAvatarUrl(chat);
+          if (a) return a;
+        }
+      } catch (e) {}
+
       const peerId = getChatPeerId(chat);
       if (!peerId) return '';
       if (selfUserId.value && String(peerId) === String(selfUserId.value)) {
