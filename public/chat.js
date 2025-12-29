@@ -358,6 +358,32 @@ const app = createApp({
           } catch (e) {}
         });
 
+        async function onMessageUpdatedLike(payload) {
+          try {
+            const { chatId, message } = extractChatIdAndMessageFromUpdate(payload);
+            if (!message) return;
+
+            // Update chat list preview if needed.
+            if (chatId && chatId !== 'global') {
+              const chat = (chats.value || []).find((c) => c && String(c.id) === String(chatId));
+              if (chat && chat.lastMessage && chat.lastMessage.id && message.id && String(chat.lastMessage.id) === String(message.id)) {
+                chat.lastMessage = message;
+              }
+            }
+
+            const current = currentChatId.value;
+            if (!current) return;
+            if (chatId && String(chatId) !== String(current)) return;
+
+            applyMessageUpdate(chatId || current, message);
+            await ensureUserCachesForMessages([message], current === 'global');
+            await nextTick();
+          } catch (e) {}
+        }
+
+        s.on('message.recalled', onMessageUpdatedLike);
+        s.on('message.updated', onMessageUpdatedLike);
+
         s.on('message.deleted', (payload) => {
           try {
             const id = payload && (payload.id || payload.messageId);
@@ -801,9 +827,33 @@ const app = createApp({
 
     function bubbleBackground(m) {
       if (!m) return '#fff';
+      if (isRecalledMessage(m)) return '#f7f7f7';
       if (m.__status === 'sending') return '#eef6ff';
       if (m.__status === 'failed') return '#ffecec';
       return '#fff';
+    }
+
+    function isRecalledMessage(m) {
+      try {
+        if (!m || typeof m !== 'object') return false;
+        if (String(m.type || '') === 'recalled') return true;
+        const c = m.content;
+        if (c && typeof c === 'object' && c.recalled === true) return true;
+        return false;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function recallNoticeText(m) {
+      try {
+        if (!m) return '消息已撤回';
+        if (isOwnMessage(m)) return '你撤回了一条消息';
+        const name = messageAuthorName(m) || '对方';
+        return `${name}撤回了一条消息`;
+      } catch (e) {
+        return '消息已撤回';
+      }
     }
 
     function previewFromStructuredContent(content) {
@@ -844,6 +894,7 @@ const app = createApp({
 
     function messageTextPreview(m) {
       if (!m) return '';
+      if (isRecalledMessage(m)) return '[消息已撤回]';
       if (m.type === 'emoji' && m.content) {
         const fn = (m.content && m.content.filename) ? String(m.content.filename) : '';
         return fn ? '[表情] ' + fn : '[表情]';
@@ -858,6 +909,120 @@ const app = createApp({
       }
       if (m.content === null || m.content === undefined) return '';
       return String(m.content);
+    }
+
+    function canRecallMessage(m) {
+      try {
+        if (!m || typeof m !== 'object') return false;
+        if (isGlobalChat.value) return false;
+        if (!isOwnMessage(m)) return false;
+        if (isRecalledMessage(m)) return false;
+        if (!m.id) return false;
+        const id = String(m.id);
+        if (id.startsWith('local-') || id.startsWith('temp_')) return false;
+        if (m.__status === 'sending') return false;
+
+        const d = parseMessageTime(m);
+        if (!d) return false;
+        const age = Date.now() - d.getTime();
+        return age >= 0 && age <= 2 * 60 * 1000;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function extractChatIdAndMessageFromUpdate(payload) {
+      try {
+        if (!payload) return { chatId: null, message: null };
+        if (payload.message && typeof payload.message === 'object') {
+          const chatId = payload.chatId || payload.chat_id || normalizeChatIdFromMessage(payload.message) || null;
+          return { chatId, message: payload.message };
+        }
+        const chatId = normalizeChatIdFromMessage(payload) || payload.chatId || payload.chat_id || null;
+        return { chatId, message: payload };
+      } catch (e) {
+        return { chatId: null, message: null };
+      }
+    }
+
+    function applyMessageUpdate(chatId, updated) {
+      try {
+        if (!updated || typeof updated !== 'object') return;
+        const id = updated.id;
+        if (!id) return;
+
+        // normalize fields so UI can render
+        normalizeMessage(updated, chatId === 'global');
+
+        if (msgById[id]) {
+          try {
+            Object.assign(msgById[id], updated);
+          } catch (e) {}
+        } else if (currentChatId.value && chatId && String(chatId) === String(currentChatId.value)) {
+          upsertIncomingMessage(updated);
+        }
+
+        // If this is the last message of a chat in list, update preview.
+        if (chatId && chatId !== 'global') {
+          const chat = (chats.value || []).find((c) => c && String(c.id) === String(chatId));
+          if (chat && chat.lastMessage && chat.lastMessage.id && String(chat.lastMessage.id) === String(id)) {
+            chat.lastMessage = updated;
+          }
+        }
+      } catch (e) {}
+    }
+
+    async function postRecallRequest(messageId) {
+      const mid = messageId !== undefined && messageId !== null ? String(messageId) : '';
+      if (!mid) throw new Error('missing messageId');
+
+      const endpoints = [];
+      // Common patterns across different backends / router mounts.
+      endpoints.push(`${apiBase.value}/messages/${encodeURIComponent(mid)}/recall`);
+      if (currentChatId.value) {
+        endpoints.push(`${apiBase.value}/chats/${encodeURIComponent(currentChatId.value)}/messages/${encodeURIComponent(mid)}/recall`);
+      }
+      endpoints.push(`${apiBase.value}/chats/${encodeURIComponent(mid)}/recall`);
+
+      let lastErr = null;
+      for (const url of endpoints) {
+        try {
+          const res = await safeFetch(url, { method: 'POST' });
+          if (res.ok) return await res.json().catch(() => ({}));
+          if (res.status === 404) continue;
+
+          let err = '';
+          try {
+            const data = await res.json().catch(() => null);
+            err = data && (data.error || data.message) ? String(data.error || data.message) : '';
+          } catch (e) {}
+          if (!err) err = `撤回失败 (${res.status})`;
+          lastErr = new Error(err);
+          break;
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+      throw lastErr || new Error('撤回失败');
+    }
+
+    async function ctxRecall() {
+      const msg = ctxMenuMsg.value;
+      hideCtxMenu();
+      try {
+        if (!canRecallMessage(msg)) {
+          ElementPlus.ElMessage.warning('只能撤回 2 分钟内发送的消息');
+          return;
+        }
+        const result = await postRecallRequest(msg.id);
+        const updated = (result && result.message) ? result.message : null;
+        if (updated) {
+          applyMessageUpdate(updated.chatId || updated.chat_id || currentChatId.value, updated);
+        }
+      } catch (e) {
+        const m = e && e.message ? String(e.message) : '撤回失败';
+        ElementPlus.ElMessage.error(m);
+      }
     }
 
     function parseMessageTime(m) {
@@ -1090,7 +1255,7 @@ const app = createApp({
       let y = ev.clientY;
       // keep menu within viewport
       const menuWidth = 140;
-      const menuHeight = 96;
+      const menuHeight = 140;
       if (x + menuWidth > window.innerWidth) x = window.innerWidth - menuWidth - 10;
       if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 10;
       if (x < 10) x = 10;
@@ -1673,6 +1838,8 @@ const app = createApp({
       messageAuthorName,
       messageAuthorFaceUrl,
       messageTextPreview,
+      isRecalledMessage,
+      recallNoticeText,
       formatLastMessage,
       getChatName,
       getChatAvatar,
@@ -1701,6 +1868,8 @@ const app = createApp({
       openGlobal,
       onMessageContextMenu,
       ctxReply,
+      canRecallMessage,
+      ctxRecall,
       canCollectEmoji,
       ctxCollectEmoji,
       setReplyTarget,

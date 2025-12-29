@@ -273,8 +273,32 @@ const app = createApp({
       return from ? getCachedFaceUrl(from) : '';
     }
 
+    function isRecalledMessage(m) {
+      try {
+        if (!m || typeof m !== 'object') return false;
+        if (String(m.type || '') === 'recalled') return true;
+        const c = m.content;
+        if (c && typeof c === 'object' && c.recalled === true) return true;
+        return false;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function recallNoticeText(m) {
+      try {
+        if (!m) return '消息已撤回';
+        if (isOwnMessage(m)) return '你撤回了一条消息';
+        const name = messageAuthorName(m) || '对方';
+        return `${name}撤回了一条消息`;
+      } catch (e) {
+        return '消息已撤回';
+      }
+    }
+
     function messageTextPreview(m) {
       if (!m) return '';
+      if (isRecalledMessage(m)) return '[消息已撤回]';
       if (m.type === 'text') {
         const t = (m.content && (m.content.text !== undefined ? m.content.text : m.content)) || '';
         return String(t);
@@ -333,6 +357,7 @@ const app = createApp({
 
     function bubbleBackground(m) {
       if (!m) return '#fff';
+      if (isRecalledMessage(m)) return '#f7f7f7';
       if (m.__status === 'sending') return '#eef6ff';
       if (m.__status === 'failed') return '#ffecec';
       return '#fff';
@@ -573,7 +598,7 @@ const app = createApp({
       
       // 确保菜单不会超出屏幕
       const menuWidth = 140;
-      const menuHeight = 100;
+      const menuHeight = 140;
       
       if (x + menuWidth > window.innerWidth) {
         x = window.innerWidth - menuWidth - 10;
@@ -589,6 +614,90 @@ const app = createApp({
       // 给震动反馈（如果支持）
       if (navigator.vibrate) {
         navigator.vibrate(50);
+      }
+    }
+
+    function canRecallMessage(m) {
+      try {
+        if (!m || typeof m !== 'object') return false;
+        if (isGlobalChat.value) return false;
+        if (!isOwnMessage(m)) return false;
+        if (isRecalledMessage(m)) return false;
+        if (!m.id) return false;
+        const id = String(m.id);
+        if (id.startsWith('local-') || id.startsWith('temp_')) return false;
+        if (m.__status === 'sending') return false;
+
+        const d = parseMessageTime(m);
+        if (!d) return false;
+        const age = Date.now() - d.getTime();
+        return age >= 0 && age <= 2 * 60 * 1000;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function applyMessageUpdate(chatId, updated) {
+      try {
+        if (!updated || typeof updated !== 'object') return;
+        if (!updated.id) return;
+        normalizeMessage(updated, chatId === 'global');
+        if (msgById[updated.id]) {
+          try { Object.assign(msgById[updated.id], updated); } catch (e) {}
+        } else if (currentChatId.value && chatId && String(chatId) === String(currentChatId.value)) {
+          msgById[updated.id] = updated;
+          messages.value.push(updated);
+        }
+      } catch (e) {}
+    }
+
+    async function postRecallRequest(messageId) {
+      const mid = messageId !== undefined && messageId !== null ? String(messageId) : '';
+      if (!mid) throw new Error('missing messageId');
+
+      const endpoints = [];
+      endpoints.push(`${apiBase.value}/messages/${encodeURIComponent(mid)}/recall`);
+      if (currentChatId.value) {
+        endpoints.push(`${apiBase.value}/chats/${encodeURIComponent(currentChatId.value)}/messages/${encodeURIComponent(mid)}/recall`);
+      }
+      endpoints.push(`${apiBase.value}/chats/${encodeURIComponent(mid)}/recall`);
+
+      let lastErr = null;
+      for (const url of endpoints) {
+        try {
+          const res = await safeFetch(url, { method: 'POST' });
+          if (res.ok) return await res.json().catch(() => ({}));
+          if (res.status === 404) continue;
+
+          let err = '';
+          try {
+            const data = await res.json().catch(() => null);
+            err = data && (data.error || data.message) ? String(data.error || data.message) : '';
+          } catch (e) {}
+          if (!err) err = `撤回失败 (${res.status})`;
+          lastErr = new Error(err);
+          break;
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+      throw lastErr || new Error('撤回失败');
+    }
+
+    async function ctxRecall() {
+      const msg = ctxMenuMsg.value;
+      hideContextMenu();
+      try {
+        if (!canRecallMessage(msg)) {
+          try { ElementPlus.ElMessage.warning('只能撤回 2 分钟内发送的消息'); } catch (e) {}
+          return;
+        }
+        const result = await postRecallRequest(msg.id);
+        const updated = (result && result.message) ? result.message : null;
+        if (updated) applyMessageUpdate(updated.chatId || updated.chat_id || currentChatId.value, updated);
+      } catch (e) {
+        const m = e && e.message ? String(e.message) : '撤回失败';
+        try { ElementPlus.ElMessage.error(m); } catch (e2) {}
       }
     }
 
@@ -936,6 +1045,23 @@ const app = createApp({
           }
         } catch (e) {}
       });
+
+      function onMessageUpdatedLike(payload) {
+        try {
+          const chatId = payload && (payload.chatId || payload.chat_id);
+          const updated = payload && payload.message ? payload.message : payload;
+          if (!updated || typeof updated !== 'object') return;
+
+          const cid = chatId || updated.chatId || updated.chat_id || null;
+          if (!currentChatId.value) return;
+          if (cid && String(cid) !== String(currentChatId.value)) return;
+
+          applyMessageUpdate(cid || currentChatId.value, updated);
+        } catch (e) {}
+      }
+
+      s.on('message.recalled', onMessageUpdatedLike);
+      s.on('message.updated', onMessageUpdatedLike);
     }
 
     function joinSocketRoom(chatId) {
@@ -1339,6 +1465,8 @@ const app = createApp({
       messageAuthorName,
       messageAuthorFaceUrl,
       messageTextPreview,
+      isRecalledMessage,
+      recallNoticeText,
       isOwnMessage,
       isImageFile,
       isVideoFile,
@@ -1353,6 +1481,8 @@ const app = createApp({
       onTouchMove,
       onTouchEnd,
       ctxReply,
+      canRecallMessage,
+      ctxRecall,
       setReplyTarget,
       sendText,
       openFilePicker,

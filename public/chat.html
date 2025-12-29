@@ -123,7 +123,10 @@
                     <span v-if="isOwnMessage(m)" class="msg-time">{{ formatTime(m) }}</span>
                     <div @contextmenu.prevent="onMessageContextMenu($event, m)"
                          :style="{ padding:'8px 10px', borderRadius:'12px', border:'1px solid #eee', background: bubbleBackground(m), width:'fit-content', maxWidth:'100%' }">
-                      <template v-if="m.type==='emoji' && m.content && m.content.url">
+                      <template v-if="isRecalledMessage(m)">
+                        <span style="white-space:pre-wrap;word-break:break-word;color:#999;font-style:italic">{{ recallNoticeText(m) }}</span>
+                      </template>
+                      <template v-else-if="m.type==='emoji' && m.content && m.content.url">
                         <img :src="m.content.url" alt="emoji" style="max-height:96px;display:inline-block;vertical-align:middle;cursor:pointer" @click.stop="openImagePreview(m.content.url)" />
                       </template>
                       <template v-else-if="m.type==='file' && m.content && isImageFile(m)">
@@ -155,6 +158,7 @@
             <div v-if="ctxMenuVisible" @click.stop style="position:fixed;z-index:9999;background:#fff;border:1px solid #dcdfe6;border-radius:6px;padding:6px;min-width:120px"
                  :style="{ left: ctxMenuX + 'px', top: ctxMenuY + 'px' }">
               <div style="cursor:pointer;padding:6px 10px" @click="ctxReply">回复</div>
+              <div v-if="canRecallMessage(ctxMenuMsg)" style="cursor:pointer;padding:6px 10px" @click="ctxRecall">撤回</div>
               <div v-if="canCollectEmoji(ctxMenuMsg)" style="cursor:pointer;padding:6px 10px" @click="ctxCollectEmoji">添加到表情包</div>
             </div>
 

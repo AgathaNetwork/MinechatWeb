@@ -284,6 +284,27 @@ const app = createApp({
             } catch (e) {}
           } catch (e) {}
         });
+
+        function onMessageUpdatedLike(payload) {
+          try {
+            const updated = payload && payload.message ? payload.message : payload;
+            if (!updated || typeof updated !== 'object') return;
+            const chatId = normalizeChatIdFromMessage(updated) || (payload && (payload.chatId || payload.chat_id));
+            if (!chatId || chatId === 'global') return;
+
+            const list = Array.isArray(chats.value) ? chats.value : [];
+            const chat = list.find((c) => c && String(c.id) === String(chatId));
+            if (!chat) return;
+
+            // Only update preview if the updated message is the current lastMessage.
+            if (chat.lastMessage && chat.lastMessage.id && updated.id && String(chat.lastMessage.id) === String(updated.id)) {
+              chat.lastMessage = updated;
+            }
+          } catch (e) {}
+        }
+
+        s.on('message.recalled', onMessageUpdatedLike);
+        s.on('message.updated', onMessageUpdatedLike);
       } catch (e) {
         // ignore
       }
@@ -430,6 +451,11 @@ const app = createApp({
       if (!chat || !chat.lastMessage) return '';
       const msg = chat.lastMessage;
       const content = msg.content;
+
+      try {
+        if (String(msg.type || '') === 'recalled') return '[消息已撤回]';
+        if (content && typeof content === 'object' && content.recalled === true) return '[消息已撤回]';
+      } catch (e) {}
       
       if (msg.type === 'text') {
         if (content && typeof content === 'object') {

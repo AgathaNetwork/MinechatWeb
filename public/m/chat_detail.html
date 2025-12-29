@@ -88,7 +88,10 @@
             </div>
 
             <div class="msg-bubble" :style="{ background: bubbleBackground(m) }">
-              <template v-if="m.type==='emoji' && m.content && m.content.url">
+              <template v-if="isRecalledMessage(m)">
+                <span style="white-space:pre-wrap;color:#999;font-style:italic">{{ recallNoticeText(m) }}</span>
+              </template>
+              <template v-else-if="m.type==='emoji' && m.content && m.content.url">
                 <img :src="m.content.url" alt="emoji" style="max-height:96px;display:block;cursor:pointer" @click.stop="openImagePreview(m.content.url)" />
               </template>
               <template v-else-if="m.type==='file' && m.content && isImageFile(m)">
@@ -115,6 +118,7 @@
 
       <div v-if="ctxMenuVisible" class="ctx-menu" :style="{ left: ctxMenuX + 'px', top: ctxMenuY + 'px' }" @click.stop>
         <div class="ctx-menu-item" @click="ctxReply">回复</div>
+        <div v-if="canRecallMessage(ctxMenuMsg)" class="ctx-menu-item" @click="ctxRecall">撤回</div>
         <div v-if="canCollectEmoji(ctxMenuMsg)" class="ctx-menu-item" @click="ctxCollectEmoji">添加到表情包</div>
       </div>
 
