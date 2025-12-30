@@ -56,6 +56,121 @@ const app = createApp({
     const msgInput = ref('');
     const msgInputEl = ref(null);
 
+    // Per-chat composer drafts (in-memory). Keyed by chatId string.
+    // Stores rich-input HTML + reply snapshot, so switching chats won't lose unsent text/@mentions.
+    const composerDrafts = Object.create(null);
+
+    function normalizeChatDraftKey(chatId) {
+      try {
+        if (chatId === undefined || chatId === null) return '';
+        return String(chatId);
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function snapshotReplyTargetForDraft(rt) {
+      try {
+        if (!rt) return null;
+        // If it's already an id, keep it as a minimal object.
+        if (typeof rt === 'string' || typeof rt === 'number') {
+          const id = String(rt);
+          return id ? { id } : null;
+        }
+        if (typeof rt !== 'object') return null;
+        const id = rt.id !== undefined && rt.id !== null ? String(rt.id) : '';
+        // Keep a small subset for preview + sending repliedTo.
+        const snap = {
+          id: id || undefined,
+          type: rt.type,
+          content: rt.content,
+          from_user: rt.from_user,
+          createdAt: rt.createdAt,
+        };
+        // If id is missing, still keep snapshot; sendText will fall back safely.
+        return snap;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function saveComposerDraftForChat(chatId) {
+      try {
+        const key = normalizeChatDraftKey(chatId);
+        if (!key) return;
+
+        let html = '';
+        try {
+          if (isRichInputActive()) {
+            const root = getRichInputEl();
+            if (root) html = String(root.innerHTML || '');
+            // Keep reactive state in sync as well.
+            syncStateFromRichInput();
+          }
+        } catch (e2) {}
+
+        composerDrafts[key] = {
+          html,
+          reply: snapshotReplyTargetForDraft(replyTarget.value),
+          ts: Date.now(),
+        };
+      } catch (e) {}
+    }
+
+    function clearComposerUIState() {
+      try {
+        msgInput.value = '';
+      } catch (e) {}
+
+      try {
+        clearRichInputDom();
+      } catch (e) {}
+
+      try {
+        pendingMentions.value = [];
+        pendingMentionAll.value = false;
+      } catch (e) {}
+
+      try {
+        mentionDialogVisible.value = false;
+        mentionSelectAll.value = false;
+        mentionSelectIds.value = [];
+        mentionQuery.value = '';
+        mentionDialogSuppressOnce.value = false;
+        mentionTriggerIndex.value = null;
+      } catch (e) {}
+
+      try {
+        clearReplyTarget();
+      } catch (e) {}
+    }
+
+    function restoreComposerDraftForChat(chatId) {
+      try {
+        const key = normalizeChatDraftKey(chatId);
+        if (!key) return;
+        const d = composerDrafts[key];
+        if (!d || typeof d !== 'object') return;
+
+        // Restore rich-input HTML.
+        try {
+          const root = getRichInputEl();
+          if (root) root.innerHTML = String(d.html || '');
+          // Recompute msgInput/pendingMentions from DOM.
+          syncStateFromRichInput();
+        } catch (e2) {}
+
+        // Restore reply target for non-global chats only.
+        try {
+          if (String(chatId) === 'global') {
+            replyTarget.value = null;
+          } else {
+            replyTarget.value = d.reply || null;
+          }
+        } catch (e3) {}
+      } catch (e) {}
+    }
+
     // Paste-to-send confirmation
     const pasteConfirmBusy = ref(false);
 
@@ -3375,6 +3490,17 @@ const app = createApp({
     }
 
     async function openChat(id) {
+      // Draft preservation across chat switching:
+      // 1) Save previous chat's composer content (including reply/@ chips)
+      // 2) Clear composer for the next chat
+      try {
+        const prev = currentChatId.value;
+        if (prev !== undefined && prev !== null && String(prev) !== String(id)) {
+          saveComposerDraftForChat(prev);
+          clearComposerUIState();
+        }
+      } catch (e) {}
+
       // 立即显示加载动画
       chatLoading.value = true;
 
@@ -3501,6 +3627,12 @@ const app = createApp({
 
         await nextTick();
         if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
+
+        // After chat loads, restore any saved draft for this chat.
+        // This runs after the mention-reset watcher, so state stays consistent.
+        try {
+          restoreComposerDraftForChat(id);
+        } catch (e) {}
 
         // join room after initial load
         try {
