@@ -54,6 +54,7 @@ const app = createApp({
     const emojiPacks = ref([]);
 
     const msgInput = ref('');
+    const msgInputEl = ref(null);
 
     // Paste-to-send confirmation
     const pasteConfirmBusy = ref(false);
@@ -82,6 +83,312 @@ const app = createApp({
     const pendingMentions = ref([]); // [{ userId, label }]
     const pendingMentionAll = ref(false);
     const mentionDialogSuppressOnce = ref(false);
+    const mentionTriggerIndex = ref(null);
+
+    // Rich-input (contenteditable) mention marker/chips
+    let mentionMarkerEl = null;
+
+    function isRichInputActive() {
+      try {
+        const el = msgInputEl.value;
+        return !!(el && el.nodeType === 1 && el.isContentEditable);
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function getRichInputEl() {
+      try {
+        if (!isRichInputActive()) return null;
+        return msgInputEl.value;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function focusRichInput() {
+      nextTick(() => {
+        try {
+          const el = getRichInputEl();
+          if (el && typeof el.focus === 'function') el.focus();
+        } catch (e) {}
+      });
+    }
+
+    function setCaretAfterNode(node) {
+      try {
+        const root = getRichInputEl();
+        if (!root) return;
+        const sel = window.getSelection ? window.getSelection() : null;
+        if (!sel) return;
+        const r = document.createRange();
+        r.setStartAfter(node);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      } catch (e) {}
+    }
+
+    function setCaretInTextNodeEnd(textNode) {
+      try {
+        const root = getRichInputEl();
+        if (!root) return;
+        if (!textNode || textNode.nodeType !== 3) return;
+        const sel = window.getSelection ? window.getSelection() : null;
+        if (!sel) return;
+        const r = document.createRange();
+        const len = textNode.textContent ? textNode.textContent.length : 0;
+        r.setStart(textNode, len);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      } catch (e) {}
+    }
+
+    function getSelectionRangeInRoot(root) {
+      try {
+        const sel = window.getSelection ? window.getSelection() : null;
+        if (!sel || sel.rangeCount === 0) return null;
+        const r = sel.getRangeAt(0);
+        if (!r) return null;
+        if (!root.contains(r.startContainer) || !root.contains(r.endContainer)) return null;
+        return r;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function isMentionChipNode(n) {
+      try {
+        return !!(n && n.nodeType === 1 && n.classList && n.classList.contains('mc-mention-chip'));
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function ensureLeadingCaretAnchor() {
+      try {
+        const root = getRichInputEl();
+        if (!root) return;
+        const first = root.firstChild;
+        if (!first) return;
+        if (!isMentionChipNode(first) && !(first.nodeType === 1 && first.classList && first.classList.contains('mc-mention-marker'))) return;
+        // If the first node is a non-editable chip/marker, insert a leading ZWSP text node
+        // so caret can be placed before it (e.g. at sentence start).
+        if (first.previousSibling) return;
+        if (first.nodeType === 3) return;
+        root.insertBefore(document.createTextNode('\u200B'), first);
+      } catch (e) {}
+    }
+
+    function createMentionChipEl(opts) {
+      const { userId, label, isAll } = opts || {};
+      const span = document.createElement('span');
+      span.className = 'mc-mention-chip';
+      span.setAttribute('contenteditable', 'false');
+      if (isAll) span.dataset.mentionAll = '1';
+      if (userId !== undefined && userId !== null) span.dataset.userId = String(userId);
+      if (label !== undefined && label !== null) span.dataset.label = String(label);
+      span.textContent = isAll ? '@全体' : `@${String(label || '')}`;
+      return span;
+    }
+
+    function ensureMentionMarkerAtCaret() {
+      try {
+        const root = getRichInputEl();
+        if (!root) return null;
+        if (mentionMarkerEl && !root.contains(mentionMarkerEl)) mentionMarkerEl = null;
+        if (mentionMarkerEl) return mentionMarkerEl;
+
+        const marker = document.createElement('span');
+        marker.className = 'mc-mention-marker';
+        marker.dataset.mentionMarker = '1';
+        marker.textContent = '\u200B';
+        marker.setAttribute('contenteditable', 'false');
+
+        const r = getSelectionRangeInRoot(root);
+        if (r) {
+          r.deleteContents();
+          r.insertNode(marker);
+        } else {
+          root.appendChild(marker);
+        }
+
+        mentionMarkerEl = marker;
+        setCaretAfterNode(marker);
+        return marker;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function replaceMentionMarkerWithText(text) {
+      try {
+        const root = getRichInputEl();
+        if (!root) return;
+        if (!mentionMarkerEl || !root.contains(mentionMarkerEl)) {
+          mentionMarkerEl = null;
+          return;
+        }
+        const t = document.createTextNode(String(text || ''));
+        mentionMarkerEl.parentNode.insertBefore(t, mentionMarkerEl);
+        mentionMarkerEl.remove();
+        mentionMarkerEl = null;
+        setCaretAfterNode(t);
+      } catch (e) {
+        mentionMarkerEl = null;
+      }
+    }
+
+    function replaceMentionMarkerWithChips(parts) {
+      try {
+        const root = getRichInputEl();
+        if (!root) return;
+        if (!mentionMarkerEl || !root.contains(mentionMarkerEl)) {
+          mentionMarkerEl = null;
+          return;
+        }
+
+        const frag = document.createDocumentFragment();
+        let lastSpace = null;
+        for (const p of parts || []) {
+          if (!p) continue;
+          const chip = createMentionChipEl(p);
+          // Use NBSP as an anchor so caret can stay inside a text node
+          // (some browsers behave oddly with flex + contenteditable after non-editable chips).
+          const space = document.createTextNode('\u00A0');
+          frag.appendChild(chip);
+          frag.appendChild(space);
+          lastSpace = space;
+        }
+
+        mentionMarkerEl.parentNode.insertBefore(frag, mentionMarkerEl);
+        mentionMarkerEl.remove();
+        mentionMarkerEl = null;
+
+        ensureLeadingCaretAnchor();
+
+        if (lastSpace) setCaretInTextNodeEnd(lastSpace);
+      } catch (e) {
+        mentionMarkerEl = null;
+      }
+    }
+
+    function syncStateFromRichInput() {
+      try {
+        const root = getRichInputEl();
+        if (!root) return;
+        ensureLeadingCaretAnchor();
+        msgInput.value = String(root.innerText || '').replace(/\u200B/g, '');
+
+        const chips = Array.from(root.querySelectorAll('.mc-mention-chip'));
+        let mentionAll = false;
+        const mentions = [];
+        for (const el of chips) {
+          if (!el || !el.dataset) continue;
+          if (el.dataset.mentionAll === '1') {
+            mentionAll = true;
+            continue;
+          }
+          const id = el.dataset.userId ? String(el.dataset.userId) : '';
+          const label = el.dataset.label ? String(el.dataset.label) : '';
+          if (!id) continue;
+          mentions.push({ userId: id, label: label || userLabel(id) || '未知玩家' });
+        }
+        const uniq = [];
+        const seen = new Set();
+        for (const m of mentions) {
+          const k = String(m.userId);
+          if (seen.has(k)) continue;
+          seen.add(k);
+          uniq.push(m);
+        }
+        pendingMentionAll.value = mentionAll;
+        pendingMentions.value = uniq;
+      } catch (e) {}
+    }
+
+    function clearRichInputDom() {
+      try {
+        const root = getRichInputEl();
+        if (!root) return;
+        root.innerHTML = '';
+        mentionMarkerEl = null;
+      } catch (e) {}
+    }
+
+    function deleteAdjacentMentionChip(isBackspace) {
+      try {
+        const root = getRichInputEl();
+        if (!root) return false;
+        const r = getSelectionRangeInRoot(root);
+        if (!r || !r.collapsed) return false;
+
+        let container = r.startContainer;
+        let offset = r.startOffset;
+        if (container && container.nodeType === 3) {
+          const len = container.textContent ? container.textContent.length : 0;
+          if (isBackspace && offset > 0) return false;
+          if (!isBackspace && offset < len) return false;
+        }
+
+        function prevNode(n) {
+          if (!n) return null;
+          if (n.previousSibling) return n.previousSibling;
+          if (n.parentNode && n.parentNode !== root) return prevNode(n.parentNode);
+          return null;
+        }
+        function nextNode(n) {
+          if (!n) return null;
+          if (n.nextSibling) return n.nextSibling;
+          if (n.parentNode && n.parentNode !== root) return nextNode(n.parentNode);
+          return null;
+        }
+
+        let candidate = null;
+        if (container && container.nodeType === 1) {
+          const children = container.childNodes || [];
+          if (isBackspace) candidate = offset > 0 ? children[offset - 1] : prevNode(container);
+          else candidate = offset < children.length ? children[offset] : nextNode(container);
+        } else if (container && container.nodeType === 3) {
+          candidate = isBackspace ? prevNode(container) : nextNode(container);
+        }
+        if (!candidate) return false;
+
+        if (candidate.nodeType === 3 && /^\s+$/.test(candidate.textContent || '')) {
+          candidate = isBackspace ? prevNode(candidate) : nextNode(candidate);
+          if (!candidate) return false;
+        }
+        if (!isMentionChipNode(candidate)) return false;
+
+        const spaceNode = isBackspace ? candidate.nextSibling : candidate.previousSibling;
+        if (spaceNode && spaceNode.nodeType === 3 && /^\s+$/.test(spaceNode.textContent || '')) {
+          try { spaceNode.remove(); } catch (e2) {}
+        }
+        candidate.remove();
+        ensureLeadingCaretAnchor();
+        syncStateFromRichInput();
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    const pendingMentionBadges = computed(() => {
+      try {
+        if (isGlobalChat.value || !isGroupChat.value) return [];
+        const tokens = [];
+        if (pendingMentionAll.value) tokens.push('@全体');
+        const list = Array.isArray(pendingMentions.value) ? pendingMentions.value : [];
+        for (const it of list) {
+          if (!it || !it.label) continue;
+          tokens.push(`@${String(it.label)}`);
+        }
+        return Array.from(new Set(tokens.filter(Boolean)));
+      } catch (e) {
+        return [];
+      }
+    });
 
     const messagesEl = ref(null);
     const chatLoading = ref(false);
@@ -237,21 +544,18 @@ const app = createApp({
         if (isGlobalChat.value || !isGroupChat.value) return;
         if (!currentChatId.value || currentChatId.value === 'global') return;
         const existing = groupMembers.value || [];
-        if (Array.isArray(existing) && existing.length > 0) return;
+        // A real group should have at least 2 members; if we only have 0/1, treat it as not loaded.
+        if (Array.isArray(existing) && existing.length >= 2) return;
 
         const cid = String(currentChatId.value);
-        const meta = await fetchChatMetaById(cid);
-        if (!meta || typeof meta !== 'object') return;
-        currentChatMeta.value = meta;
+
+        // Use the same loading strategy as group management.
+        try {
+          await Promise.allSettled([refreshGroupInfo(cid), loadGroupAdmins(cid)]);
+        } catch (e0) {}
 
         try {
-          if (String(meta.type || '').toLowerCase() === 'group') {
-            groupOwnerId.value = meta.created_by !== undefined && meta.created_by !== null ? String(meta.created_by) : groupOwnerId.value;
-          }
-        } catch (e2) {}
-
-        try {
-          const ids = extractMemberIdsFromChat(meta);
+          const ids = (groupMembers.value || []).map(String).filter(Boolean);
           if (ids.length > 0) await fetchMissingUserNames(new Set(ids));
         } catch (e3) {}
       } catch (e) {}
@@ -284,15 +588,120 @@ const app = createApp({
     function cancelMentionDialog() {
       try {
         mentionDialogVisible.value = false;
+        mentionTriggerIndex.value = null;
+        // Rich-input: if user cancels, keep a literal '@' where it was triggered.
+        if (isRichInputActive() && mentionMarkerEl) {
+          replaceMentionMarkerWithText('@');
+          syncStateFromRichInput();
+        }
         // Keep '@' so user can type literal '@'.
         // Suppress the auto-open once to avoid re-opening immediately.
         mentionDialogSuppressOnce.value = true;
       } catch (e) {}
     }
 
+    function getNativeMsgInputEl() {
+      try {
+        const comp = msgInputEl.value;
+        if (!comp) return null;
+        // contenteditable mode
+        if (comp && comp.nodeType === 1 && comp.isContentEditable) return comp;
+        // Element Plus el-input renders native input/textarea inside.
+        const root = comp.$el && comp.$el.querySelector ? comp.$el : null;
+        if (root) {
+          const el = root.querySelector('input,textarea');
+          if (el) return el;
+        }
+        // Fallbacks (best-effort)
+        if (comp.input && typeof comp.input === 'object') return comp.input;
+        if (comp.textarea && typeof comp.textarea === 'object') return comp.textarea;
+        return null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function focusMsgInputAndSetCaret(pos) {
+      nextTick(() => {
+        try {
+          const comp = msgInputEl.value;
+          if (comp && typeof comp.focus === 'function') comp.focus();
+        } catch (e) {}
+
+        try {
+          const el = getNativeMsgInputEl();
+          if (!el) return;
+          // Rich input doesn't support selectionStart/setSelectionRange.
+          if (el && el.nodeType === 1 && el.isContentEditable) return;
+          if (typeof pos !== 'number' || !Number.isFinite(pos)) return;
+          const p = Math.max(0, Math.min(el.value ? el.value.length : (String(msgInput.value || '').length), pos));
+          if (typeof el.setSelectionRange === 'function') el.setSelectionRange(p, p);
+        } catch (e2) {}
+      });
+    }
+
+    function stripMentionTriggerChar() {
+      try {
+        const idxRaw = mentionTriggerIndex.value;
+        mentionTriggerIndex.value = null;
+        const idx = Number(idxRaw);
+        if (!Number.isFinite(idx)) return;
+        const s = String(msgInput.value || '');
+        if (!s) return;
+
+        if (idx >= 0 && idx < s.length && s[idx] === '@') {
+          msgInput.value = s.slice(0, idx) + s.slice(idx + 1);
+          return idx;
+        }
+        // Fallback: sometimes cursor math differs by 1 depending on timing.
+        if (idx - 1 >= 0 && idx - 1 < s.length && s[idx - 1] === '@') {
+          msgInput.value = s.slice(0, idx - 1) + s.slice(idx);
+          return idx - 1;
+        }
+        return null;
+      } catch (e) {
+        try { mentionTriggerIndex.value = null; } catch (e2) {}
+        return null;
+      }
+    }
+
     function confirmMentionDialog() {
       try {
         if (isGlobalChat.value || !isGroupChat.value) return cancelMentionDialog();
+
+        // Rich-input: replace marker with atomic mention chips.
+        if (isRichInputActive()) {
+          const ids = Array.isArray(mentionSelectIds.value) ? mentionSelectIds.value.map(String).filter(Boolean) : [];
+          const uniqueIds = Array.from(new Set(ids));
+          const parts = [];
+          if (mentionSelectAll.value) parts.push({ isAll: true, userId: '__all__', label: '全体' });
+          for (const id of uniqueIds) {
+            const name = userLabel(id) || '未知玩家';
+            parts.push({ isAll: false, userId: String(id), label: String(name) });
+          }
+
+          if (parts.length === 0) return cancelMentionDialog();
+
+          pendingMentionAll.value = !!mentionSelectAll.value;
+          const list = Array.isArray(pendingMentions.value) ? pendingMentions.value.slice() : [];
+          for (const id of uniqueIds) {
+            const name = userLabel(id) || '未知玩家';
+            const idx = list.findIndex((x) => x && String(x.userId) === String(id));
+            if (idx >= 0) list[idx] = { userId: String(id), label: String(name) };
+            else list.push({ userId: String(id), label: String(name) });
+          }
+          pendingMentions.value = list;
+
+          mentionDialogVisible.value = false;
+          mentionSelectAll.value = false;
+          mentionSelectIds.value = [];
+          mentionDialogSuppressOnce.value = false;
+
+          replaceMentionMarkerWithChips(parts);
+          syncStateFromRichInput();
+          focusRichInput();
+          return;
+        }
 
         const ids = Array.isArray(mentionSelectIds.value) ? mentionSelectIds.value.map(String).filter(Boolean) : [];
         const uniqueIds = Array.from(new Set(ids));
@@ -307,8 +716,14 @@ const app = createApp({
           return cancelMentionDialog();
         }
 
+        // Replace the trigger '@' (wherever it was typed) with inline @tokens.
         const insertion = parts.join(' ') + ' ';
-        msgInput.value = String(msgInput.value || '').replace(/(^|\s)@$/, `$1${insertion}`);
+        const caretPos = stripMentionTriggerChar();
+        try {
+          const base = String(msgInput.value || '');
+          const at = typeof caretPos === 'number' && Number.isFinite(caretPos) ? caretPos : base.length;
+          msgInput.value = base.slice(0, at) + insertion + base.slice(at);
+        } catch (e0) {}
 
         pendingMentionAll.value = !!mentionSelectAll.value;
         const list = Array.isArray(pendingMentions.value) ? pendingMentions.value.slice() : [];
@@ -324,6 +739,10 @@ const app = createApp({
         mentionSelectAll.value = false;
         mentionSelectIds.value = [];
         mentionDialogSuppressOnce.value = false;
+
+        // Place caret right after inserted tokens.
+        const nextPos = (typeof caretPos === 'number' && Number.isFinite(caretPos) ? caretPos : String(msgInput.value || '').length) + insertion.length;
+        focusMsgInputAndSetCaret(nextPos);
       } catch (e) {
         try { cancelMentionDialog(); } catch (e2) {}
       }
@@ -395,8 +814,71 @@ const app = createApp({
     function onMsgInputKeydown(ev) {
       try {
         if (!ev) return;
-        if (isGlobalChat.value || !isGroupChat.value) return;
         const key = ev.key;
+
+        // Rich-input mode
+        if (isRichInputActive()) {
+          if (isGlobalChat.value || !isGroupChat.value) return;
+
+          // Enter to send (like the old input). Shift+Enter keeps default behavior.
+          if (key === 'Enter') {
+            try {
+              if (ev.isComposing || ev.keyCode === 229) return;
+            } catch (e0) {}
+            if (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+            if (mentionDialogVisible.value) return;
+            ev.preventDefault();
+            try { sendText(); } catch (e1) {}
+            return;
+          }
+
+          if (key === '@') {
+            ev.preventDefault();
+            ensureMentionMarkerAtCaret();
+            setTimeout(() => {
+              try {
+                if (!mentionDialogVisible.value) openMentionDialog();
+              } catch (e3) {}
+            }, 0);
+            return;
+          }
+
+          if (key === 'Backspace' || key === 'Delete') {
+            const removed = deleteAdjacentMentionChip(key === 'Backspace');
+            if (removed) {
+              ev.preventDefault();
+              return;
+            }
+          }
+          return;
+        }
+
+        if (isGlobalChat.value || !isGroupChat.value) return;
+
+        // Typing '@' anywhere triggers the mention picker in group chats.
+        if (key === '@') {
+          try {
+            const target = ev.target;
+            if (target && target.selectionStart !== undefined) {
+              mentionTriggerIndex.value = Number(target.selectionStart) || 0;
+            } else {
+              mentionTriggerIndex.value = null;
+            }
+          } catch (e2) {
+            mentionTriggerIndex.value = null;
+          }
+
+          // Open after the input value updates.
+          try {
+            setTimeout(() => {
+              try {
+                if (!mentionDialogVisible.value) openMentionDialog();
+              } catch (e3) {}
+            }, 0);
+          } catch (e4) {}
+          return;
+        }
+
         if (key !== 'Backspace' && key !== 'Delete') return;
         const target = ev.target;
         if (!target) return;
@@ -425,14 +907,55 @@ const app = createApp({
         if (!id) return;
         const name = String(label || userLabel(id) || '未知玩家');
 
-        const hit = parseTailMentionQuery(msgInput.value);
-        if (hit) {
-          msgInput.value = String(msgInput.value || '').replace(/(^|\s)@([^\s@]*)$/, `${hit.prefix}@${name} `);
-        } else {
-          const base = String(msgInput.value || '');
-          const sep = base && !/\s$/.test(base) ? ' ' : '';
-          msgInput.value = base + sep + `@${name} `;
+        // Rich-input: insert chip at caret.
+        if (isRichInputActive()) {
+          const root = getRichInputEl();
+          if (!root) return;
+          const r = getSelectionRangeInRoot(root);
+          const chip = createMentionChipEl({ userId: id, label: name, isAll: false });
+          const space = document.createTextNode('\u00A0');
+          if (r) {
+            r.deleteContents();
+            r.insertNode(space);
+            r.insertNode(chip);
+            setCaretInTextNodeEnd(space);
+          } else {
+            root.appendChild(chip);
+            root.appendChild(space);
+            setCaretInTextNodeEnd(space);
+          }
+
+          ensureLeadingCaretAnchor();
+
+          const list = Array.isArray(pendingMentions.value) ? pendingMentions.value.slice() : [];
+          const idx = list.findIndex((x) => x && String(x.userId) === id);
+          if (idx >= 0) list[idx] = { userId: id, label: name };
+          else list.push({ userId: id, label: name });
+          pendingMentions.value = list;
+
+          mentionDialogVisible.value = false;
+          mentionQuery.value = '';
+          syncStateFromRichInput();
+          focusRichInput();
+          return;
         }
+
+        // If user just typed '@' to open dialog, strip it first; then insert inline token at caret.
+        let caretPos = stripMentionTriggerChar();
+        const el = getNativeMsgInputEl();
+        if (caretPos === null || caretPos === undefined) {
+          try {
+            if (el && el.selectionStart !== undefined) caretPos = Number(el.selectionStart) || 0;
+          } catch (e0) {}
+        }
+
+        const insertion = `@${name} `;
+        try {
+          const base = String(msgInput.value || '');
+          const at = typeof caretPos === 'number' && Number.isFinite(caretPos) ? caretPos : base.length;
+          msgInput.value = base.slice(0, at) + insertion + base.slice(at);
+          caretPos = at + insertion.length;
+        } catch (e1) {}
 
         const list = Array.isArray(pendingMentions.value) ? pendingMentions.value.slice() : [];
         const idx = list.findIndex((x) => x && String(x.userId) === id);
@@ -442,6 +965,42 @@ const app = createApp({
 
         mentionDialogVisible.value = false;
         mentionQuery.value = '';
+
+        focusMsgInputAndSetCaret(caretPos);
+      } catch (e) {}
+    }
+
+    function onMsgInputInput() {
+      try {
+        if (isRichInputActive()) {
+          syncStateFromRichInput();
+          return;
+        }
+        cleanupPendingMentionsAfterEdit(msgInput.value);
+      } catch (e) {}
+    }
+
+    function onMsgInputPaste(ev) {
+      try {
+        if (!isRichInputActive()) return;
+        if (!ev || !ev.clipboardData) return;
+        const text = ev.clipboardData.getData('text/plain');
+        if (text === undefined || text === null) return;
+        ev.preventDefault();
+
+        const root = getRichInputEl();
+        if (!root) return;
+        const r = getSelectionRangeInRoot(root);
+        const node = document.createTextNode(String(text));
+        if (r) {
+          r.deleteContents();
+          r.insertNode(node);
+          setCaretAfterNode(node);
+        } else {
+          root.appendChild(node);
+          setCaretAfterNode(node);
+        }
+        syncStateFromRichInput();
       } catch (e) {}
     }
 
@@ -2145,10 +2704,21 @@ const app = createApp({
     function messageTextParts(m) {
       try {
         const text = messageTextRaw(m);
-        if (!text) return [{ t: 'text', v: '' }];
-
         let tokens = mentionTokensFromMessage(m);
-        tokens = (tokens || []).filter((t) => t && text.includes(t));
+        tokens = Array.from(new Set((tokens || []).filter(Boolean)));
+        tokens.sort((a, b) => b.length - a.length);
+
+        // If message carries mentions but text doesn't embed any '@name', render mentions as a prefix.
+        if (tokens.length > 0 && (!text || !tokens.some((t) => text.includes(t)))) {
+          const parts = tokens.map((t) => ({ t: 'mention', v: t }));
+          if (text) parts.push({ t: 'text', v: ' ' + text });
+          return parts;
+        }
+
+        if (!text) return tokens.length > 0 ? tokens.map((t) => ({ t: 'mention', v: t })) : [{ t: 'text', v: '' }];
+
+        // Inline parsing when tokens are embedded in text.
+        tokens = tokens.filter((t) => t && text.includes(t));
         tokens = Array.from(new Set(tokens));
         tokens.sort((a, b) => b.length - a.length);
         if (tokens.length === 0) return [{ t: 'text', v: text }];
@@ -2959,29 +3529,29 @@ const app = createApp({
 
     async function sendText() {
       if (!currentChatId.value) return ElementPlus.ElMessage.warning('先选择会话');
-      const text = msgInput.value.trim();
-      if (!text) return;
 
-      // Snapshot mentions (group chat only)
+      // Rich-input: sync DOM -> state before reading.
+      try {
+        if (isRichInputActive()) syncStateFromRichInput();
+      } catch (e) {}
+      const text = (msgInput.value || '').trim();
+
+      // Snapshot mentions (group chat only) - independent from text content.
       let mentionIds = [];
+      let mentionAll = false;
       try {
         if (!isGlobalChat.value && isGroupChat.value) {
           const list = Array.isArray(pendingMentions.value) ? pendingMentions.value : [];
-          mentionIds = list
-            .filter((x) => x && x.userId && x.label && text.includes(`@${String(x.label)}`))
-            .map((x) => String(x.userId));
-          mentionIds = Array.from(new Set(mentionIds));
+          mentionIds = list.filter((x) => x && x.userId).map((x) => String(x.userId));
+          mentionIds = Array.from(new Set(mentionIds.filter(Boolean)));
+          mentionAll = !!pendingMentionAll.value;
         }
       } catch (e) {
         mentionIds = [];
-      }
-
-      let mentionAll = false;
-      try {
-        mentionAll = !!(pendingMentionAll.value && text.includes('@全体'));
-      } catch (e) {
         mentionAll = false;
       }
+
+      if (!text && !(mentionAll || mentionIds.length > 0)) return;
 
       const tempId = `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
       const optimisticMsg = {
@@ -3000,6 +3570,7 @@ const app = createApp({
       msgById[tempId] = optimisticMsg;
       messages.value = messages.value.concat([optimisticMsg]);
       msgInput.value = '';
+      clearRichInputDom();
       pendingMentions.value = [];
       pendingMentionAll.value = false;
       mentionDialogVisible.value = false;
@@ -3045,21 +3616,14 @@ const app = createApp({
       }
     }
 
-    // Mention panel reacts to input tail "@..." in group chats.
+    // Mention picker state reset on chat switch.
     try {
-      watch(msgInput, () => {
-        if (mentionDialogVisible.value) return;
-        if (mentionDialogSuppressOnce.value && shouldOpenMentionDialog(msgInput.value)) {
-          mentionDialogSuppressOnce.value = false;
-          return;
-        }
-        if (shouldOpenMentionDialog(msgInput.value)) openMentionDialog();
-      });
       watch([currentChatId, isGroupChat], () => {
         mentionDialogVisible.value = false;
         mentionSelectAll.value = false;
         mentionSelectIds.value = [];
         mentionDialogSuppressOnce.value = false;
+        mentionTriggerIndex.value = null;
         mentionQuery.value = '';
         pendingMentions.value = [];
         pendingMentionAll.value = false;
@@ -3358,6 +3922,8 @@ const app = createApp({
       selfFaceUrl,
       messages,
       msgInput,
+      msgInputEl,
+      pendingMentionBadges,
       imagePreviewVisible,
       imagePreviewUrl,
       imagePreviewDragging,
@@ -3450,6 +4016,8 @@ const app = createApp({
       openGlobal,
       onMessageContextMenu,
       onMsgInputKeydown,
+      onMsgInputInput,
+      onMsgInputPaste,
       ctxReply,
       ctxCopy,
       canCopyText,

@@ -38,6 +38,12 @@
       /* Group manage drawer: remove default header gap (Element Plus adds margin-bottom). */
       .group-manage-drawer .el-drawer__header{margin-bottom:0 !important;padding-bottom:10px !important}
       .group-manage-drawer .el-drawer__body{padding-top:0 !important}
+
+      .mc-rich-input{flex:1;min-width:0;min-height:32px;box-sizing:border-box;border:1px solid var(--el-border-color);border-radius:var(--el-border-radius-base);padding:5px 10px;line-height:22px;background:var(--el-fill-color-blank);color:var(--el-text-color-primary);outline:none;display:block;word-break:break-word;white-space:pre-wrap}
+      .mc-rich-input:focus{border-color:var(--el-color-primary)}
+      .mc-rich-input:empty:before{content:attr(data-placeholder);color:var(--el-text-color-placeholder);pointer-events:none}
+      .mc-rich-input .mc-mention-chip{cursor:default;display:inline-flex;align-items:center;vertical-align:middle;max-width:100%;padding:0 8px;height:24px;line-height:24px;border-radius:var(--el-border-radius-base);border:1px solid var(--el-color-primary-light-7);background:var(--el-color-primary-light-9);color:var(--el-color-primary);user-select:none;white-space:nowrap;margin:0 6px 2px 0}
+      .mc-rich-input .mc-mention-chip::selection{background:transparent}
     </style>
   </head>
   <body>
@@ -168,7 +174,16 @@
               <el-icon><magic-stick /></el-icon>
             </el-button>
           </div>
-          <el-input v-model="msgInput" placeholder="输入消息" @keyup.enter="sendText" @keydown="onMsgInputKeydown" style="flex:1"></el-input>
+          <div
+            ref="msgInputEl"
+            class="mc-rich-input"
+            contenteditable="true"
+            :data-placeholder="'输入消息'"
+            @keydown="onMsgInputKeydown"
+            @input="onMsgInputInput"
+            @paste="onMsgInputPaste"
+            style="flex:1"
+          ></div>
           <el-button type="primary" @click="sendText" style="flex-shrink:0">发送</el-button>
         </div>
 
