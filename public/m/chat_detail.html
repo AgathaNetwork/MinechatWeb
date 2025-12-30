@@ -195,15 +195,33 @@
           @close="cancelMentionDialog"
         >
           <div style="display:flex;flex-direction:column;gap:10px">
-            <el-checkbox v-model="mentionSelectAll">@全体</el-checkbox>
-            <el-input v-model="mentionQuery" clearable placeholder="搜索成员" size="small" />
+            <el-checkbox v-if="canMentionAll" v-model="mentionSelectAll">@全体</el-checkbox>
             <div style="max-height:320px;overflow:auto;border:1px solid #eee;border-radius:8px;padding:8px">
-              <el-checkbox-group v-model="mentionSelectIds" style="display:flex;flex-direction:column;gap:8px">
-                <el-checkbox v-for="u in mentionOptions" :key="u.id" :label="u.id">
-                  {{ u.label }}<span v-if="u.mc" style="margin-left:6px;color:#999">({{ u.mc }})</span>
-                </el-checkbox>
-              </el-checkbox-group>
-              <div v-if="(!mentionOptions || mentionOptions.length===0)" style="font-size:12px;color:#999;padding:6px 2px">没有可选成员</div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div
+                  v-for="mid in mentionMemberIds"
+                  :key="mid"
+                  @click="toggleMentionSelected(mid)"
+                  style="display:flex;align-items:center;justify-content:space-between;padding:6px 4px;border-bottom:1px solid #f3f3f3;cursor:pointer"
+                >
+                  <div style="display:flex;gap:10px;align-items:flex-start;min-width:0;flex:1">
+                    <el-checkbox
+                      :model-value="mentionSelectIds.includes(String(mid))"
+                      @update:model-value="(v)=>setMentionSelected(mid, v)"
+                      @click.stop
+                    />
+                    <div style="min-width:0">
+                      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                        <span style="font-weight:500">{{ userLabel(mid) }}</span>
+                        <el-tag v-if="String(mid)===String(groupOwnerId)" type="info" effect="plain" size="small">群主</el-tag>
+                        <el-tag v-else-if="groupAdmins.includes(String(mid))" type="info" effect="plain" size="small">管理员</el-tag>
+                      </div>
+                      <div style="font-size:12px;color:#888">{{ userMinecraftId(mid) || '未绑定minecraft uuid' }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-if="(!mentionMemberIds || mentionMemberIds.length===0)" style="font-size:12px;color:#999;padding:6px 2px">没有可选成员</div>
             </div>
           </div>
 

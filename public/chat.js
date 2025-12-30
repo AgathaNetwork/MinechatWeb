@@ -85,6 +85,27 @@ const app = createApp({
     const mentionDialogSuppressOnce = ref(false);
     const mentionTriggerIndex = ref(null);
 
+    function setMentionSelected(userId, selected) {
+      try {
+        const id = userId !== undefined && userId !== null ? String(userId) : '';
+        if (!id) return;
+        const current = Array.isArray(mentionSelectIds.value) ? mentionSelectIds.value.map(String) : [];
+        const next = new Set(current.filter(Boolean));
+        if (selected) next.add(id);
+        else next.delete(id);
+        mentionSelectIds.value = Array.from(next);
+      } catch (e) {}
+    }
+
+    function toggleMentionSelected(userId) {
+      try {
+        const id = userId !== undefined && userId !== null ? String(userId) : '';
+        if (!id) return;
+        const current = Array.isArray(mentionSelectIds.value) ? mentionSelectIds.value.map(String) : [];
+        setMentionSelected(id, !current.includes(id));
+      } catch (e) {}
+    }
+
     // Rich-input (contenteditable) mention marker/chips
     let mentionMarkerEl = null;
 
@@ -416,6 +437,10 @@ const app = createApp({
       return (groupAdmins.value || []).map(String).includes(sid);
     });
 
+    const canMentionAll = computed(() => {
+      return !!(groupIsOwner.value || groupIsAdmin.value);
+    });
+
     const groupCanManage = computed(() => {
       return !!(groupIsOwner.value || groupIsAdmin.value);
     });
@@ -444,7 +469,6 @@ const app = createApp({
         if (isGlobalChat.value) return [];
         if (!isGroupChat.value) return [];
         const sid = selfUserId.value ? String(selfUserId.value) : '';
-        const q = String(mentionQuery.value || '').trim().toLowerCase();
         const ids = (groupMembers.value || []).map(String).filter((id) => id && id !== sid);
         const list = ids.map((id) => {
           const label = userLabel(id);
@@ -452,14 +476,20 @@ const app = createApp({
           return { id, label, mc };
         });
 
-        const filtered = q
-          ? list.filter((u) => {
-              const a = String(u.label || '').toLowerCase();
-              const b = String(u.mc || '').toLowerCase();
-              return a.includes(q) || b.includes(q) || String(u.id).includes(q);
-            })
-          : list;
-        return filtered.slice(0, 30);
+        return list;
+      } catch (e) {
+        return [];
+      }
+    });
+
+    // Mention candidates: keep the same base data source as group management (groupMembers).
+    const mentionMemberIds = computed(() => {
+      try {
+        if (isGlobalChat.value) return [];
+        if (!isGroupChat.value) return [];
+        const sid = selfUserId.value ? String(selfUserId.value) : '';
+
+        return (groupMembers.value || []).map(String).filter((id) => id && id !== sid);
       } catch (e) {
         return [];
       }
@@ -531,7 +561,26 @@ const app = createApp({
     function extractMemberIdsFromChat(chatLike) {
       try {
         if (!chatLike || typeof chatLike !== 'object') return [];
-        const raw = chatLike.members ?? chatLike.memberIds ?? chatLike.member_ids;
+
+        // Common field names across API versions.
+        let raw =
+          chatLike.members ??
+          chatLike.memberIds ??
+          chatLike.member_ids ??
+          chatLike.memberList ??
+          chatLike.member_list ??
+          chatLike.participants ??
+          chatLike.participantIds ??
+          chatLike.participant_ids ??
+          chatLike.users ??
+          chatLike.userIds ??
+          chatLike.user_ids;
+
+        // Some APIs nest the array under items/list/ids.
+        if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+          raw = raw.items ?? raw.list ?? raw.ids ?? raw.data ?? raw.rows ?? raw.members ?? raw.users;
+        }
+
         if (!Array.isArray(raw)) return [];
         return normalizeMembersArray(raw);
       } catch (e) {
@@ -669,12 +718,14 @@ const app = createApp({
       try {
         if (isGlobalChat.value || !isGroupChat.value) return cancelMentionDialog();
 
+        const allowAll = !!canMentionAll.value;
+
         // Rich-input: replace marker with atomic mention chips.
         if (isRichInputActive()) {
           const ids = Array.isArray(mentionSelectIds.value) ? mentionSelectIds.value.map(String).filter(Boolean) : [];
           const uniqueIds = Array.from(new Set(ids));
           const parts = [];
-          if (mentionSelectAll.value) parts.push({ isAll: true, userId: '__all__', label: '全体' });
+          if (allowAll && mentionSelectAll.value) parts.push({ isAll: true, userId: '__all__', label: '全体' });
           for (const id of uniqueIds) {
             const name = userLabel(id) || '未知玩家';
             parts.push({ isAll: false, userId: String(id), label: String(name) });
@@ -682,7 +733,7 @@ const app = createApp({
 
           if (parts.length === 0) return cancelMentionDialog();
 
-          pendingMentionAll.value = !!mentionSelectAll.value;
+          pendingMentionAll.value = !!(allowAll && mentionSelectAll.value);
           const list = Array.isArray(pendingMentions.value) ? pendingMentions.value.slice() : [];
           for (const id of uniqueIds) {
             const name = userLabel(id) || '未知玩家';
@@ -706,7 +757,7 @@ const app = createApp({
         const ids = Array.isArray(mentionSelectIds.value) ? mentionSelectIds.value.map(String).filter(Boolean) : [];
         const uniqueIds = Array.from(new Set(ids));
         const parts = [];
-        if (mentionSelectAll.value) parts.push('@全体');
+        if (allowAll && mentionSelectAll.value) parts.push('@全体');
         for (const id of uniqueIds) {
           const name = userLabel(id) || '未知玩家';
           parts.push(`@${name}`);
@@ -725,7 +776,7 @@ const app = createApp({
           msgInput.value = base.slice(0, at) + insertion + base.slice(at);
         } catch (e0) {}
 
-        pendingMentionAll.value = !!mentionSelectAll.value;
+        pendingMentionAll.value = !!(allowAll && mentionSelectAll.value);
         const list = Array.isArray(pendingMentions.value) ? pendingMentions.value.slice() : [];
         for (const id of uniqueIds) {
           const name = userLabel(id) || '未知玩家';
@@ -3992,6 +4043,7 @@ const app = createApp({
       transferOwnerId,
       groupMembers,
       groupIsOwner,
+      canMentionAll,
       groupCanManage,
       inviteOptions,
       adminOptions,
@@ -4042,6 +4094,9 @@ const app = createApp({
       mentionSelectIds,
       mentionQuery,
       mentionOptions,
+      mentionMemberIds,
+      setMentionSelected,
+      toggleMentionSelected,
       confirmMentionDialog,
       cancelMentionDialog,
       onNav,
