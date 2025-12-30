@@ -225,7 +225,13 @@
                         </a>
                       </template>
                       <template v-else>
-                        <span style="white-space:pre-wrap;word-break:break-word">{{ messageTextPreview(m) }}</span>
+                        <span v-if="m.type==='text'" style="white-space:pre-wrap;word-break:break-word">
+                          <template v-for="(p, i) in messageTextParts(m)" :key="i">
+                            <el-tag v-if="p.t==='mention'" type="info" effect="plain" size="small" style="margin:0 2px">{{ p.v }}</el-tag>
+                            <span v-else>{{ p.v }}</span>
+                          </template>
+                        </span>
+                        <span v-else style="white-space:pre-wrap;word-break:break-word">{{ messageTextPreview(m) }}</span>
                       </template>
                     </div>
                     <span v-if="!isOwnMessage(m)" class="msg-time">{{ formatTime(m) }}</span>
@@ -261,23 +267,41 @@
                   <el-icon><magic-stick /></el-icon>
                 </el-button>
               </div>
-              <el-input v-model="msgInput" placeholder="输入消息" @keyup.enter="sendText"></el-input>
+              <el-input v-model="msgInput" placeholder="输入消息" @keyup.enter="sendText" @keydown="onMsgInputKeydown"></el-input>
               <el-button type="primary" @click="sendText">发送</el-button>
 
-              <div v-if="mentionPanelVisible" @click.stop style="position:absolute;left:0;bottom:46px;width:320px;max-height:240px;overflow:auto;background:#fff;border:1px solid #ddd;padding:8px;box-shadow:0 4px 12px rgba(0,0,0,0.08);border-radius:8px">
-                <div style="font-size:12px;color:#666;margin-bottom:6px">选择要 @ 的玩家</div>
-                <div style="display:flex;flex-direction:column;gap:6px">
-                  <el-button
-                    v-for="u in mentionOptions"
-                    :key="u.id"
-                    text
-                    size="small"
-                    style="justify-content:flex-start"
-                    @click="selectMention(u)"
-                  >{{ u.label }}<span v-if="u.mc" style="margin-left:6px;color:#999">({{ u.mc }})</span></el-button>
-                  <div v-if="!mentionOptions || mentionOptions.length===0" style="font-size:12px;color:#999;padding:6px 2px">没有可选成员</div>
+              <el-dialog
+                v-model="mentionDialogVisible"
+                title="选择要 @ 的成员"
+                width="420px"
+                :close-on-click-modal="false"
+                @close="cancelMentionDialog"
+              >
+                <div style="display:flex;flex-direction:column;gap:10px">
+                  <el-checkbox v-model="mentionSelectAll">@全体</el-checkbox>
+                  <el-input v-model="mentionQuery" clearable placeholder="搜索成员" size="small" />
+                  <div style="max-height:260px;overflow:auto;border:1px solid #eee;border-radius:8px;padding:8px">
+                    <el-checkbox-group v-model="mentionSelectIds" style="display:flex;flex-direction:column;gap:6px">
+                      <el-checkbox v-for="u in mentionOptions" :key="u.id" :label="u.id">
+                        <div style="min-width:0">
+                          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                            <span style="font-weight:500">{{ u.label }}</span>
+                            <el-tag v-if="String(u.id)===String(groupOwnerId)" type="info" effect="plain" size="small">群主</el-tag>
+                            <el-tag v-else-if="groupAdmins.includes(String(u.id))" type="info" effect="plain" size="small">管理员</el-tag>
+                          </div>
+                          <div style="font-size:12px;color:#888">{{ u.mc || '未绑定minecraft uuid' }}</div>
+                        </div>
+                      </el-checkbox>
+                    </el-checkbox-group>
+                    <div v-if="(!mentionOptions || mentionOptions.length===0)" style="font-size:12px;color:#999;padding:6px 2px">没有可选成员</div>
+                  </div>
                 </div>
-              </div>
+
+                <template #footer>
+                  <el-button @click="cancelMentionDialog">取消</el-button>
+                  <el-button type="primary" @click="confirmMentionDialog">确定</el-button>
+                </template>
+              </el-dialog>
 
               <div v-if="emojiPanelVisible" @click.stop style="position:absolute;left:0;bottom:46px;width:320px;max-height:320px;overflow:auto;background:#fff;border:1px solid #ddd;padding:8px;box-shadow:0 4px 12px rgba(0,0,0,0.08);border-radius:8px">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">

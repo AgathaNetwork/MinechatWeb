@@ -1,5 +1,5 @@
 // Mobile chat detail page - simplified version
-const { createApp, ref, reactive, computed, onMounted, nextTick } = Vue;
+const { createApp, ref, reactive, computed, watch, onMounted, nextTick } = Vue;
 
 const app = createApp({
   setup() {
@@ -128,6 +128,75 @@ const app = createApp({
         return '';
       }
     }
+    function normalizeMemberId(raw) {
+      try {
+        if (raw === undefined || raw === null) return '';
+        if (typeof raw === 'string' || typeof raw === 'number') return String(raw);
+        if (typeof raw === 'object') {
+          const direct = raw.id ?? raw.userId ?? raw.user_id ?? raw.uid ?? raw._id;
+          if (direct !== undefined && direct !== null) return String(direct);
+          const u = raw.user ?? raw.member ?? raw.profile;
+          if (u !== undefined && u !== null) {
+            if (typeof u === 'string' || typeof u === 'number') return String(u);
+            if (typeof u === 'object') {
+              const nested = u.id ?? u.userId ?? u.user_id ?? u.uid ?? u._id;
+              if (nested !== undefined && nested !== null) return String(nested);
+            }
+          }
+          return '';
+        }
+        return String(raw);
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function normalizeMembersArray(members) {
+      try {
+        if (!Array.isArray(members)) return [];
+        return members.map(normalizeMemberId).filter((x) => !!x);
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function extractMemberIdsFromChat(chatLike) {
+      try {
+        if (!chatLike || typeof chatLike !== 'object') return [];
+        const raw = chatLike.members ?? chatLike.memberIds ?? chatLike.member_ids;
+        if (!Array.isArray(raw)) return [];
+        return normalizeMembersArray(raw);
+      } catch (e) {
+        return [];
+      }
+    }
+
+    async function ensureGroupMembersLoaded() {
+      try {
+        if (isGlobalChat.value || !isGroupChat.value) return;
+        if (!currentChatId.value || currentChatId.value === 'global') return;
+        const existing = groupMembers.value || [];
+        if (Array.isArray(existing) && existing.length > 0) return;
+
+        const cid = String(currentChatId.value);
+        const metaRes = await safeFetch(`${apiBase.value}/chats/${encodeURIComponent(cid)}`);
+        if (!metaRes.ok) return;
+        const meta = await metaRes.json().catch(() => null);
+        if (!meta || typeof meta !== 'object') return;
+        currentChatMeta.value = meta;
+
+        try {
+          if (String(meta.type || '').toLowerCase() === 'group') {
+            groupOwnerId.value = meta.created_by !== undefined && meta.created_by !== null ? String(meta.created_by) : groupOwnerId.value;
+          }
+        } catch (e2) {}
+
+        try {
+          const ids = extractMemberIdsFromChat(meta);
+          if (ids.length > 0) await fetchMissingUserNames(new Set(ids));
+        } catch (e3) {}
+      } catch (e) {}
+    }
 
     const inviteOptions = computed(() => {
       const members = new Set((groupMembers.value || []).map(String));
@@ -172,9 +241,13 @@ const app = createApp({
     const ctxMenuY = ref(0);
     const ctxMenuMsg = ref(null);
 
-    const mentionPanelVisible = ref(false);
+    const mentionDialogVisible = ref(false);
+    const mentionSelectAll = ref(false);
+    const mentionSelectIds = ref([]); // [userId]
     const mentionQuery = ref('');
     const pendingMentions = ref([]); // [{ userId, label }]
+    const pendingMentionAll = ref(false);
+    const mentionDialogSuppressOnce = ref(false);
 
     const mentionOptions = computed(() => {
       try {
@@ -212,27 +285,155 @@ const app = createApp({
       }
     }
 
-    function refreshMentionPanel() {
+    function shouldOpenMentionDialog(text) {
       try {
-        if (isGlobalChat.value || !isGroupChat.value) {
-          mentionPanelVisible.value = false;
-          mentionQuery.value = '';
-          return;
-        }
-        const hit = parseTailMentionQuery(msgInput.value);
-        if (!hit) {
-          mentionPanelVisible.value = false;
-          mentionQuery.value = '';
-          return;
-        }
-        mentionQuery.value = hit.query;
-        // Avoid overlapping with emoji panel.
-        try { emojiPanelVisible.value = false; } catch (e2) {}
-        mentionPanelVisible.value = true;
+        if (isGlobalChat.value || !isGroupChat.value) return false;
+        const s = String(text || '');
+        return /(^|\s)@$/.test(s);
       } catch (e) {
-        mentionPanelVisible.value = false;
-        mentionQuery.value = '';
+        return false;
       }
+    }
+
+    function openMentionDialog() {
+      try {
+        if (isGlobalChat.value || !isGroupChat.value) return;
+        try { ensureGroupMembersLoaded(); } catch (e0) {}
+        try { emojiPanelVisible.value = false; } catch (e2) {}
+        mentionQuery.value = '';
+        mentionSelectAll.value = false;
+        mentionSelectIds.value = [];
+        mentionDialogVisible.value = true;
+        mentionDialogSuppressOnce.value = false;
+      } catch (e) {}
+    }
+
+    function cancelMentionDialog() {
+      try {
+        mentionDialogVisible.value = false;
+        mentionDialogSuppressOnce.value = true;
+      } catch (e) {}
+    }
+
+    function confirmMentionDialog() {
+      try {
+        if (isGlobalChat.value || !isGroupChat.value) return cancelMentionDialog();
+
+        const ids = Array.isArray(mentionSelectIds.value) ? mentionSelectIds.value.map(String).filter(Boolean) : [];
+        const uniqueIds = Array.from(new Set(ids));
+        const parts = [];
+        if (mentionSelectAll.value) parts.push('@全体');
+        for (const id of uniqueIds) {
+          const name = userLabel(id) || '未知玩家';
+          parts.push(`@${name}`);
+        }
+
+        if (parts.length === 0) return cancelMentionDialog();
+
+        const insertion = parts.join(' ') + ' ';
+        msgInput.value = String(msgInput.value || '').replace(/(^|\s)@$/, `$1${insertion}`);
+
+        pendingMentionAll.value = !!mentionSelectAll.value;
+        const list = Array.isArray(pendingMentions.value) ? pendingMentions.value.slice() : [];
+        for (const id of uniqueIds) {
+          const name = userLabel(id) || '未知玩家';
+          const idx = list.findIndex((x) => x && String(x.userId) === String(id));
+          if (idx >= 0) list[idx] = { userId: String(id), label: String(name) };
+          else list.push({ userId: String(id), label: String(name) });
+        }
+        pendingMentions.value = list;
+
+        mentionDialogVisible.value = false;
+        mentionSelectAll.value = false;
+        mentionSelectIds.value = [];
+        mentionDialogSuppressOnce.value = false;
+      } catch (e) {
+        try { cancelMentionDialog(); } catch (e2) {}
+      }
+    }
+
+    function removeMentionTokenAt(text, cursorPos, isBackspace) {
+      try {
+        const s = String(text || '');
+        const pos = Math.max(0, Math.min(s.length, Number(cursorPos) || 0));
+
+        const tokens = [];
+        if (pendingMentionAll.value) tokens.push('@全体');
+        try {
+          const list = Array.isArray(pendingMentions.value) ? pendingMentions.value : [];
+          for (const it of list) {
+            if (!it || !it.label) continue;
+            tokens.push(`@${String(it.label)}`);
+          }
+        } catch (e2) {}
+        const uniq = Array.from(new Set(tokens.filter(Boolean))).sort((a, b) => b.length - a.length);
+        if (uniq.length === 0) return null;
+
+        function isWs(ch) {
+          return ch === ' ' || ch === '\n' || ch === '\r' || ch === '\t';
+        }
+
+        for (const tok of uniq) {
+          let from = 0;
+          while (from <= s.length) {
+            const idx = s.indexOf(tok, from);
+            if (idx === -1) break;
+            const start = idx;
+            const end = idx + tok.length;
+            const beforeOk = start === 0 || isWs(s[start - 1]);
+            const afterOk = end === s.length || isWs(s[end]);
+            if (beforeOk && afterOk) {
+              const hit = isBackspace ? (start < pos && pos <= end) : (start <= pos && pos < end);
+              if (hit) {
+                let delStart = start;
+                let delEnd = end;
+                if (delEnd < s.length && s[delEnd] === ' ') delEnd += 1;
+                else if (delStart > 0 && s[delStart - 1] === ' ') delStart -= 1;
+                const next = s.slice(0, delStart) + s.slice(delEnd);
+                const nextPos = delStart;
+                return { next, nextPos };
+              }
+            }
+            from = idx + tok.length;
+          }
+        }
+        return null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function cleanupPendingMentionsAfterEdit(text) {
+      try {
+        const s = String(text || '');
+        if (!s.includes('@全体')) pendingMentionAll.value = false;
+        const list = Array.isArray(pendingMentions.value) ? pendingMentions.value : [];
+        pendingMentions.value = list.filter((x) => x && x.label && s.includes(`@${String(x.label)}`));
+      } catch (e) {}
+    }
+
+    function onMsgInputKeydown(ev) {
+      try {
+        if (!ev) return;
+        if (isGlobalChat.value || !isGroupChat.value) return;
+        const key = ev.key;
+        if (key !== 'Backspace' && key !== 'Delete') return;
+        const target = ev.target;
+        if (!target) return;
+        const start = target.selectionStart;
+        const end = target.selectionEnd;
+        if (start === undefined || end === undefined) return;
+        if (start !== end) return;
+
+        const res = removeMentionTokenAt(msgInput.value, start, key === 'Backspace');
+        if (!res) return;
+        ev.preventDefault();
+        msgInput.value = res.next;
+        cleanupPendingMentionsAfterEdit(msgInput.value);
+        nextTick(() => {
+          try { target.setSelectionRange(res.nextPos, res.nextPos); } catch (e2) {}
+        });
+      } catch (e) {}
     }
 
     function insertMention(userId, label) {
@@ -257,15 +458,8 @@ const app = createApp({
         else list.push({ userId: id, label: name });
         pendingMentions.value = list;
 
-        mentionPanelVisible.value = false;
+        mentionDialogVisible.value = false;
         mentionQuery.value = '';
-      } catch (e) {}
-    }
-
-    function selectMention(u) {
-      try {
-        if (!u) return;
-        insertMention(u.id, u.label);
       } catch (e) {}
     }
 
@@ -632,8 +826,6 @@ const app = createApp({
           '确定解散该群聊吗？解散后将删除该群聊及其消息记录。',
           '解散群聊',
           {
-            type: 'warning',
-            confirmButtonText: '解散',
             cancelButtonText: '取消',
             distinguishCancelAndClose: true,
           }
@@ -804,6 +996,86 @@ const app = createApp({
         return String(t);
       }
       return '';
+    }
+
+    function messageTextRaw(m) {
+      try {
+        if (!m || typeof m !== 'object') return '';
+        if (m.type !== 'text') return '';
+        const c = m.content;
+        if (c && typeof c === 'object') {
+          if (c.text !== undefined && c.text !== null) return String(c.text);
+          return '';
+        }
+        if (c === null || c === undefined) return '';
+        return String(c);
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function mentionTokensFromMessage(m) {
+      try {
+        if (!m || typeof m !== 'object') return [];
+        if (m.type !== 'text') return [];
+        const c = m.content;
+        if (!c || typeof c !== 'object') return [];
+
+        const tokens = [];
+        const mentionAll = !!(c.mentionAll || c.mention_all);
+        if (mentionAll) tokens.push('@全体');
+
+        const mentions = Array.isArray(c.mentions) ? c.mentions : [];
+        for (const it of mentions) {
+          const userId = it && typeof it === 'object' ? (it.userId || it.user_id || it.id) : it;
+          const id = userId !== undefined && userId !== null ? String(userId) : '';
+          if (!id) continue;
+          const name = userLabel(id) || '未知玩家';
+          tokens.push(`@${name}`);
+        }
+        return Array.from(new Set(tokens.filter(Boolean)));
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function messageTextParts(m) {
+      try {
+        const text = messageTextRaw(m);
+        if (!text) return [{ t: 'text', v: '' }];
+
+        let tokens = mentionTokensFromMessage(m);
+        tokens = (tokens || []).filter((t) => t && text.includes(t));
+        tokens = Array.from(new Set(tokens));
+        tokens.sort((a, b) => b.length - a.length);
+        if (tokens.length === 0) return [{ t: 'text', v: text }];
+
+        const parts = [];
+        let pos = 0;
+        while (pos < text.length) {
+          let bestIdx = -1;
+          let bestTok = '';
+          for (const tok of tokens) {
+            const idx = text.indexOf(tok, pos);
+            if (idx === -1) continue;
+            if (bestIdx === -1 || idx < bestIdx || (idx === bestIdx && tok.length > bestTok.length)) {
+              bestIdx = idx;
+              bestTok = tok;
+            }
+          }
+
+          if (bestIdx === -1) {
+            parts.push({ t: 'text', v: text.slice(pos) });
+            break;
+          }
+          if (bestIdx > pos) parts.push({ t: 'text', v: text.slice(pos, bestIdx) });
+          parts.push({ t: 'mention', v: bestTok });
+          pos = bestIdx + bestTok.length;
+        }
+        return parts;
+      } catch (e) {
+        return [{ t: 'text', v: messageTextPreview(m) }];
+      }
     }
 
     function truncatePreviewText(s, maxLen) {
@@ -1999,7 +2271,10 @@ const app = createApp({
         } else {
           const metaRes = await safeFetch(`${apiBase.value}/chats/${encodeURIComponent(id)}`);
           if (metaRes.ok) {
-            const chatMeta = await metaRes.json();
+            const chatMeta = await metaRes.json().catch(() => null);
+            if (!chatMeta || typeof chatMeta !== 'object') {
+              // keep going to message loading
+            } else {
             currentChatMeta.value = chatMeta;
             currentChatTitle.value = chatMeta.displayName || chatMeta.name || '';
             const isGroup = String(chatMeta.type || '').toLowerCase() === 'group';
@@ -2035,6 +2310,7 @@ const app = createApp({
                   }
                 }
               }
+            }
             }
           }
         }
@@ -2123,6 +2399,7 @@ const app = createApp({
 
       // Snapshot mentions (group chat only)
       let mentionIds = [];
+      let mentionAll = false;
       try {
         if (!isGlobalChat.value && isGroupChat.value) {
           const list = Array.isArray(pendingMentions.value) ? pendingMentions.value : [];
@@ -2130,10 +2407,12 @@ const app = createApp({
             .filter((x) => x && x.userId && x.label && text.includes(`@${String(x.label)}`))
             .map((x) => String(x.userId));
           mentionIds = Array.from(new Set(mentionIds));
+          mentionAll = !!pendingMentionAll.value && text.includes('@全体');
         }
       } catch (e) {
         mentionIds = [];
-      }
+        mentionAll = false;
+          }
 
       // Some browsers/WebViews change zoom during input; force restore to 1x.
       restoreViewportScale();
@@ -2143,8 +2422,8 @@ const app = createApp({
         id: tempId,
         type: 'text',
         content:
-          !isGlobalChat.value && isGroupChat.value && mentionIds.length > 0
-            ? { text, mentions: mentionIds.map((id) => ({ userId: id })) }
+          !isGlobalChat.value && isGroupChat.value && (mentionAll || mentionIds.length > 0)
+            ? { text, mentions: mentionIds.map((id) => ({ userId: id })), mentionAll: !!mentionAll }
             : { text },
         from_user: selfUserId.value,
         created_at: new Date().toISOString(),
@@ -2159,7 +2438,10 @@ const app = createApp({
       messages.value.push(optimisticMsg);
       msgInput.value = '';
       pendingMentions.value = [];
-      mentionPanelVisible.value = false;
+      pendingMentionAll.value = false;
+      mentionDialogVisible.value = false;
+      mentionSelectAll.value = false;
+      mentionSelectIds.value = [];
       mentionQuery.value = '';
       clearReplyTarget();
 
@@ -2180,7 +2462,10 @@ const app = createApp({
           ? { content: text }
           : {
               type: 'text',
-              content: mentionIds.length > 0 ? { text, mentions: mentionIds.map((id) => ({ userId: id })) } : text,
+              content:
+                mentionAll || mentionIds.length > 0
+                  ? { text, mentions: mentionIds.map((id) => ({ userId: id })), mentionAll: !!mentionAll }
+                  : text,
             };
         if (!isGlobal && optimisticMsg.replied_to) body.repliedTo = optimisticMsg.replied_to;
 
@@ -2206,12 +2491,21 @@ const app = createApp({
     // Mention panel reacts to input tail "@..." in group chats.
     try {
       watch(msgInput, () => {
-        refreshMentionPanel();
+        if (mentionDialogVisible.value) return;
+        if (mentionDialogSuppressOnce.value && shouldOpenMentionDialog(msgInput.value)) {
+          mentionDialogSuppressOnce.value = false;
+          return;
+        }
+        if (shouldOpenMentionDialog(msgInput.value)) openMentionDialog();
       });
       watch([currentChatId, isGroupChat], () => {
-        mentionPanelVisible.value = false;
+        mentionDialogVisible.value = false;
+        mentionSelectAll.value = false;
+        mentionSelectIds.value = [];
+        mentionDialogSuppressOnce.value = false;
         mentionQuery.value = '';
         pendingMentions.value = [];
+        pendingMentionAll.value = false;
       });
     } catch (e) {}
 
@@ -2462,6 +2756,7 @@ const app = createApp({
       messagePreviewSuffix,
       messagePreviewText,
       messageTextPreview,
+      messageTextParts,
       isRecalledMessage,
       recallNoticeText,
       isOwnMessage,
@@ -2479,6 +2774,7 @@ const app = createApp({
       onTouchStart,
       onTouchMove,
       onTouchEnd,
+      onMsgInputKeydown,
       ctxReply,
       ctxCopy,
       ctxMention,
@@ -2504,9 +2800,14 @@ const app = createApp({
       goBack,
       goEmojiManage,
       onMessagesScroll,
-      mentionPanelVisible,
+      // mentions
+      mentionDialogVisible,
+      mentionSelectAll,
+      mentionSelectIds,
+      mentionQuery,
       mentionOptions,
-      selectMention,
+      confirmMentionDialog,
+      cancelMentionDialog,
     };
   },
 });
