@@ -136,6 +136,15 @@
                 <span v-else style="white-space:pre-wrap;word-break:break-word">{{ messageTextPreview(m) }}</span>
               </template>
             </div>
+
+            <div v-if="showReadCount(m)" style="display:flex;align-items:center;gap:6px;font-size:11px;color:#999;margin-top:4px;padding:0 4px">
+              <el-icon style="font-size:14px;line-height:1"><user-filled /></el-icon>
+              <span>{{ readCountFor(m) }}</span>
+            </div>
+
+            <div v-if="showReadStatus(m)" style="font-size:11px;color:#999;margin-top:4px;padding:0 4px">
+              {{ readStatusTextFor(m) }}
+            </div>
             <div class="msg-time">{{ formatTime(m) }}</div>
           </div>
           </div>

@@ -189,6 +189,117 @@ const app = createApp({
 
     const selfUserId = ref(null);
 
+    // --- Read receipts (client-side reporting) ---
+    // Every 0.5s, batch-report read message ids for the currently open chat.
+    // Backend should return read fields when querying messages:
+    // - self chat: no read info
+    // - single chat: `read` (bool) for messages sent by self
+    // - group chat: `readCount` (number)
+    let readReportTimer = null;
+    const readQueueByChat = Object.create(null); // chatId -> Set(messageId)
+    const readSentByChat = Object.create(null); // chatId -> Set(messageId)
+
+    function ensureIdSet(map, key) {
+      try {
+        const k = key !== undefined && key !== null ? String(key) : '';
+        if (!k) return null;
+        if (!map[k]) map[k] = new Set();
+        return map[k];
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function isSelfChatMeta(chatMeta) {
+      try {
+        if (!chatMeta || typeof chatMeta !== 'object') return false;
+        if (!selfUserId.value) return false;
+        const ids = extractMemberIdsFromChat(chatMeta);
+        return Array.isArray(ids) && ids.length === 1 && String(ids[0]) === String(selfUserId.value);
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function shouldReportReadForCurrentChat() {
+      try {
+        if (!currentChatId.value) return false;
+        if (String(currentChatId.value) === 'global') return false;
+        if (!isLoggedIn.value) return false;
+        if (!selfUserId.value) return false;
+        if (isSelfChatMeta(currentChatMeta.value)) return false;
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function queueReadForCurrentChat() {
+      try {
+        if (!shouldReportReadForCurrentChat()) return;
+        const chatId = String(currentChatId.value);
+        const q = ensureIdSet(readQueueByChat, chatId);
+        const sent = ensureIdSet(readSentByChat, chatId);
+        if (!q || !sent) return;
+        const arr = Array.isArray(messages.value) ? messages.value : [];
+        for (const m of arr) {
+          if (!m || !m.id) continue;
+          const mid = String(m.id);
+          if (!mid) continue;
+          const fromUser = m.from_user || m.fromUser || m.from;
+          if (fromUser && String(fromUser) === String(selfUserId.value)) continue;
+          if (sent.has(mid)) continue;
+          q.add(mid);
+        }
+      } catch (e) {}
+    }
+
+    async function flushReadReportOnce() {
+      try {
+        if (!shouldReportReadForCurrentChat()) return;
+        const chatId = String(currentChatId.value);
+        const q = ensureIdSet(readQueueByChat, chatId);
+        const sent = ensureIdSet(readSentByChat, chatId);
+        if (!q || !sent) return;
+
+        // Keep queue fresh.
+        queueReadForCurrentChat();
+
+        const ids = Array.from(q.values()).filter(Boolean);
+        if (ids.length === 0) return;
+        const batch = ids.slice(0, 500);
+
+        const url = `${apiHttpBase()}/messages/read/batch`;
+        const res = await safeFetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messageIds: batch }),
+        });
+        if (!res || !res.ok) return;
+
+        for (const id of batch) {
+          q.delete(id);
+          sent.add(id);
+        }
+      } catch (e) {}
+    }
+
+    function startReadReporter() {
+      try {
+        if (readReportTimer) return;
+        readReportTimer = setInterval(() => {
+          try { flushReadReportOnce(); } catch (e) {}
+        }, 500);
+      } catch (e) {}
+    }
+
+    function stopReadReporter() {
+      try {
+        if (readReportTimer) clearInterval(readReportTimer);
+      } catch (e) {}
+      readReportTimer = null;
+    }
+
     const fileInputEl = ref(null);
 
     const mentionDialogVisible = ref(false);
@@ -540,6 +651,129 @@ const app = createApp({
         return false;
       }
     });
+
+    const isSelfChat = computed(() => {
+      try {
+        if (isGlobalChat.value) return false;
+        const sid = selfUserId.value ? String(selfUserId.value) : '';
+        if (!sid) return false;
+
+        // Prefer current meta; fallback to list item.
+        let chatLike = currentChatMeta.value;
+        if (!chatLike && currentChatId.value && currentChatId.value !== 'global') {
+          chatLike = (chats.value || []).find((c) => c && String(c.id) === String(currentChatId.value));
+        }
+
+        const ids = extractMemberIdsFromChat(chatLike);
+        if (!Array.isArray(ids) || ids.length === 0) return false;
+        return ids.map(String).filter(Boolean).every((id) => id === sid);
+      } catch (e) {
+        return false;
+      }
+    });
+
+    const isDirectChat = computed(() => {
+      try {
+        if (isGlobalChat.value) return false;
+        if (isGroupChat.value) return false;
+        if (isSelfChat.value) return false;
+
+        const t = String((currentChatMeta.value && currentChatMeta.value.type) || '').toLowerCase();
+        if (t === 'single' || t === 'direct' || t === 'dm' || t === 'private') return true;
+
+        // Fallback: 2-member chat (and not self-chat).
+        let chatLike = currentChatMeta.value;
+        if (!chatLike && currentChatId.value && currentChatId.value !== 'global') {
+          chatLike = (chats.value || []).find((c) => c && String(c.id) === String(currentChatId.value));
+        }
+        const ids = extractMemberIdsFromChat(chatLike);
+        return Array.isArray(ids) && ids.length === 2;
+      } catch (e) {
+        return false;
+      }
+    });
+
+    function readBoolFor(m) {
+      try {
+        if (!m || typeof m !== 'object') return null;
+        const raw =
+          m.read ??
+          m.isRead ??
+          m.is_read ??
+          m.read_status ??
+          (m.meta ? m.meta.read : undefined) ??
+          (m.meta ? m.meta.isRead : undefined);
+
+        if (raw === undefined || raw === null || raw === '') return null;
+        if (typeof raw === 'boolean') return raw;
+        if (typeof raw === 'number') return raw > 0;
+        const s = String(raw).toLowerCase().trim();
+        if (s === '1' || s === 'true' || s === 'read' || s === '已读') return true;
+        if (s === '0' || s === 'false' || s === 'unread' || s === '未读') return false;
+        return null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function showReadStatus(m) {
+      try {
+        if (isGlobalChat.value) return false;
+        if (isSelfChat.value) return false;
+        if (!isDirectChat.value) return false;
+        if (!isOwnMessage(m)) return false;
+        if (!m || typeof m !== 'object') return false;
+        if (isRecalledMessage(m)) return false;
+
+        // Show when backend provided read flag (including false).
+        const raw =
+          m.read ??
+          m.isRead ??
+          m.is_read ??
+          m.read_status ??
+          (m.meta ? m.meta.read : undefined) ??
+          (m.meta ? m.meta.isRead : undefined);
+        return !(raw === undefined || raw === null || raw === '');
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function readStatusTextFor(m) {
+      const b = readBoolFor(m);
+      if (b === null) return '';
+      return b ? '已读' : '未读';
+    }
+
+    function readCountFor(m) {
+      try {
+        if (!m || typeof m !== 'object') return 0;
+        const raw = m.readCount ?? m.read_count ?? (m.meta ? m.meta.readCount : undefined);
+        const n = Number(raw);
+        if (!Number.isFinite(n)) return 0;
+        return Math.max(0, Math.floor(n));
+      } catch (e) {
+        return 0;
+      }
+    }
+
+    function showReadCount(m) {
+      try {
+        if (isGlobalChat.value) return false;
+        if (isSelfChat.value) return false;
+        if (!isGroupChat.value) return false;
+        if (!isOwnMessage(m)) return false;
+        if (!m || typeof m !== 'object') return false;
+        // Prefer hiding for recalled messages.
+        if (isRecalledMessage(m)) return false;
+
+        const raw = m.readCount ?? m.read_count ?? (m.meta ? m.meta.readCount : undefined);
+        if (raw === undefined || raw === null || raw === '') return false;
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
 
     const groupIsOwner = computed(() => {
       if (!selfUserId.value || !groupOwnerId.value) return false;
@@ -984,21 +1218,23 @@ const app = createApp({
 
         // Rich-input mode
         if (isRichInputActive()) {
-          if (isGlobalChat.value || !isGroupChat.value) return;
-
-          // Enter to send (like the old input). Shift+Enter keeps default behavior.
+          // Enter to send (Shift+Enter keeps default behavior).
+          // This should work for global + single + group chats.
           if (key === 'Enter') {
             try {
               if (ev.isComposing || ev.keyCode === 229) return;
             } catch (e0) {}
             if (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.altKey) return;
-            if (mentionDialogVisible.value) return;
+            // If mention dialog is open in group chat, don't send.
+            if (!isGlobalChat.value && isGroupChat.value && mentionDialogVisible.value) return;
             ev.preventDefault();
             try { sendText(); } catch (e1) {}
             return;
           }
 
+          // '@' mention picker only for group chats (non-global).
           if (key === '@') {
+            if (isGlobalChat.value || !isGroupChat.value) return;
             ev.preventDefault();
             ensureMentionMarkerAtCaret();
             setTimeout(() => {
@@ -1660,6 +1896,7 @@ const app = createApp({
             const stickToBottom = isScrolledNearBottom(messagesEl.value);
             upsertIncomingMessage(msg);
             await ensureUserCachesForMessages([msg], current === 'global');
+            try { queueReadForCurrentChat(); } catch (e0) {}
             await nextTick();
             if (stickToBottom && messagesEl.value) {
               messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
@@ -1692,6 +1929,68 @@ const app = createApp({
 
         s.on('message.recalled', onMessageUpdatedLike);
         s.on('message.updated', onMessageUpdatedLike);
+
+        // --- Read receipt realtime events ---
+        // Payload shapes (best-effort compatibility):
+        // - { messageId, userId, chatId }
+        // - { chatId, messageIds, userId }
+        function applyReadEventToLocalState(payload) {
+          try {
+            const cid = payload && (payload.chatId || payload.chat_id);
+            const current = currentChatId.value;
+            if (cid && current && String(cid) !== String(current)) return;
+
+            const messageId = payload && (payload.messageId || payload.id);
+            const userId = payload && (payload.userId || payload.uid);
+            if (!messageId) return;
+
+            const mid = String(messageId);
+            const m = msgById[mid];
+            if (!m) return;
+
+            // For single chat: mark my outgoing messages as read when the other user reads.
+            try {
+              const fromUser = m.from_user || m.fromUser || m.from;
+              if (selfUserId.value && fromUser && String(fromUser) === String(selfUserId.value)) {
+                if (userId && String(userId) !== String(selfUserId.value)) {
+                  m.read = true;
+                }
+              }
+            } catch (e1) {}
+
+            // For group chat: increment readCount best-effort.
+            try {
+              if (isGroupChat.value) {
+                const prev = Number(m.readCount || 0);
+                m.readCount = prev + 1;
+              }
+            } catch (e2) {}
+
+            // Trigger reactive update for the messages list.
+            try {
+              const list = Array.isArray(messages.value) ? messages.value : [];
+              const idx = list.findIndex((x) => x && x.id && String(x.id) === mid);
+              if (idx >= 0) {
+                list.splice(idx, 1, Object.assign({}, list[idx], m));
+                messages.value = list;
+              }
+            } catch (e3) {}
+          } catch (e) {}
+        }
+
+        s.on('message.read', (payload) => {
+          try { applyReadEventToLocalState(payload || {}); } catch (e) {}
+        });
+
+        s.on('message.read.batch', (payload) => {
+          try {
+            const p = payload || {};
+            const ids = Array.isArray(p.messageIds) ? p.messageIds : (Array.isArray(p.ids) ? p.ids : []);
+            for (const id of ids) {
+              applyReadEventToLocalState({ chatId: p.chatId || p.chat_id, messageId: id, userId: p.userId || p.uid });
+            }
+          } catch (e) {}
+        });
 
         s.on('message.deleted', (payload) => {
           try {
@@ -3628,6 +3927,12 @@ const app = createApp({
         await nextTick();
         if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
 
+        // Best-effort: opening chat means current loaded messages are read.
+        try {
+          queueReadForCurrentChat();
+          flushReadReportOnce();
+        } catch (e) {}
+
         // After chat loads, restore any saved draft for this chat.
         // This runs after the mention-reset watcher, so state stays consistent.
         try {
@@ -3708,6 +4013,8 @@ const app = createApp({
       if (messagesEl.value.scrollTop < 80) {
         loadMoreMessages();
       }
+
+      try { queueReadForCurrentChat(); } catch (e) {}
     }
 
     async function sendText() {
@@ -4061,6 +4368,7 @@ const app = createApp({
       if (isLoggedIn.value) {
         connectSocket();
         await loadChats();
+        try { startReadReporter(); } catch (e) {}
       }
 
       try {
@@ -4090,6 +4398,8 @@ const app = createApp({
       try {
         document.removeEventListener('paste', handlePasteToSend, true);
       } catch (e) {}
+
+      try { stopReadReporter(); } catch (e) {}
     });
 
     return {
@@ -4120,6 +4430,8 @@ const app = createApp({
       isGlobalChat,
       isLoggedIn,
       isGroupChat,
+      isSelfChat,
+      isDirectChat,
 
       ctxMenuVisible,
       ctxMenuX,
@@ -4149,6 +4461,10 @@ const app = createApp({
       bubbleBackground,
       formatTime,
       shouldShowTimeDivider,
+      showReadCount,
+      readCountFor,
+      showReadStatus,
+      readStatusTextFor,
       isImageFile,
       isVideoFile,
       fileDisplayUrl,

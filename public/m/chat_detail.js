@@ -1,5 +1,5 @@
 // Mobile chat detail page - simplified version
-const { createApp, ref, reactive, computed, watch, onMounted, nextTick } = Vue;
+const { createApp, ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } = Vue;
 
 const app = createApp({
   setup() {
@@ -15,6 +15,122 @@ const app = createApp({
     const userFaceCache = reactive({});
     const userMinecraftCache = reactive({});
     const selfUserId = ref(null);
+
+    // --- Read receipts (client-side reporting) ---
+    // Every 0.5s, batch-report read message ids for the currently open chat.
+    let readReportTimer = null;
+    const readQueueByChat = Object.create(null); // chatId -> Set(messageId)
+    const readSentByChat = Object.create(null); // chatId -> Set(messageId)
+
+    function ensureIdSet(map, key) {
+      try {
+        const k = key !== undefined && key !== null ? String(key) : '';
+        if (!k) return null;
+        if (!map[k]) map[k] = new Set();
+        return map[k];
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function isSelfChatMeta(chatMeta) {
+      try {
+        if (!chatMeta || typeof chatMeta !== 'object') return false;
+        if (!selfUserId.value) return false;
+        const ids = extractMemberIdsFromChat(chatMeta);
+        if (!Array.isArray(ids) || ids.length === 0) return false;
+        const sid = String(selfUserId.value);
+        return ids.map(String).filter(Boolean).every((id) => id === sid);
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function apiHttpBase() {
+      try {
+        return String(apiBase.value || '').trim().replace(/\/$/, '');
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function shouldReportReadForCurrentChat() {
+      try {
+        if (!currentChatId.value) return false;
+        if (String(currentChatId.value) === 'global') return false;
+        if (!token.value) return false;
+        if (!selfUserId.value) return false;
+        if (isSelfChatMeta(currentChatMeta.value)) return false;
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function queueReadForCurrentChat() {
+      try {
+        if (!shouldReportReadForCurrentChat()) return;
+        const chatId = String(currentChatId.value);
+        const q = ensureIdSet(readQueueByChat, chatId);
+        const sent = ensureIdSet(readSentByChat, chatId);
+        if (!q || !sent) return;
+        const arr = Array.isArray(messages.value) ? messages.value : [];
+        for (const m of arr) {
+          if (!m || !m.id) continue;
+          const mid = String(m.id);
+          if (!mid) continue;
+          const fromUser = m.from_user || m.fromUser || m.from;
+          if (fromUser && String(fromUser) === String(selfUserId.value)) continue;
+          if (sent.has(mid)) continue;
+          q.add(mid);
+        }
+      } catch (e) {}
+    }
+
+    async function flushReadReportOnce() {
+      try {
+        if (!shouldReportReadForCurrentChat()) return;
+        const chatId = String(currentChatId.value);
+        const q = ensureIdSet(readQueueByChat, chatId);
+        const sent = ensureIdSet(readSentByChat, chatId);
+        if (!q || !sent) return;
+
+        queueReadForCurrentChat();
+
+        const ids = Array.from(q.values()).filter(Boolean);
+        if (ids.length === 0) return;
+        const batch = ids.slice(0, 500);
+
+        const url = `${apiHttpBase()}/messages/read/batch`;
+        const res = await safeFetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messageIds: batch }),
+        });
+        if (!res || !res.ok) return;
+
+        for (const id of batch) {
+          q.delete(id);
+          sent.add(id);
+        }
+      } catch (e) {}
+    }
+
+    function startReadReporter() {
+      try {
+        if (readReportTimer) return;
+        readReportTimer = setInterval(() => {
+          try { flushReadReportOnce(); } catch (e) {}
+        }, 500);
+      } catch (e) {}
+    }
+
+    function stopReadReporter() {
+      try {
+        if (readReportTimer) clearInterval(readReportTimer);
+      } catch (e) {}
+      readReportTimer = null;
+    }
 
     const fileInputEl = ref(null);
     const inputAreaEl = ref(null);
@@ -74,6 +190,15 @@ const app = createApp({
     const INITIAL_LIMIT = 50;
     const isGlobalChat = computed(() => currentChatId.value === 'global');
 
+    const isSelfChat = computed(() => {
+      try {
+        if (isGlobalChat.value) return false;
+        return isSelfChatMeta(currentChatMeta.value);
+      } catch (e) {
+        return false;
+      }
+    });
+
     const isGroupChat = computed(() => {
       try {
         if (!currentChatMeta.value || typeof currentChatMeta.value !== 'object') return false;
@@ -82,6 +207,102 @@ const app = createApp({
         return false;
       }
     });
+
+    const isDirectChat = computed(() => {
+      try {
+        if (isGlobalChat.value) return false;
+        if (isGroupChat.value) return false;
+        if (isSelfChat.value) return false;
+
+        const t = String((currentChatMeta.value && currentChatMeta.value.type) || '').toLowerCase();
+        if (t === 'single' || t === 'direct' || t === 'dm' || t === 'private') return true;
+
+        const ids = extractMemberIdsFromChat(currentChatMeta.value);
+        return Array.isArray(ids) && ids.length === 2;
+      } catch (e) {
+        return false;
+      }
+    });
+
+    function readBoolFor(m) {
+      try {
+        if (!m || typeof m !== 'object') return null;
+        const raw =
+          m.read ??
+          m.isRead ??
+          m.is_read ??
+          m.read_status ??
+          (m.meta ? m.meta.read : undefined) ??
+          (m.meta ? m.meta.isRead : undefined);
+
+        if (raw === undefined || raw === null || raw === '') return null;
+        if (typeof raw === 'boolean') return raw;
+        if (typeof raw === 'number') return raw > 0;
+        const s = String(raw).toLowerCase().trim();
+        if (s === '1' || s === 'true' || s === 'read' || s === '已读') return true;
+        if (s === '0' || s === 'false' || s === 'unread' || s === '未读') return false;
+        return null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function showReadStatus(m) {
+      try {
+        if (isGlobalChat.value) return false;
+        if (isSelfChat.value) return false;
+        if (!isDirectChat.value) return false;
+        if (!isOwnMessage(m)) return false;
+        if (!m || typeof m !== 'object') return false;
+        if (isRecalledMessage(m)) return false;
+
+        const raw =
+          m.read ??
+          m.isRead ??
+          m.is_read ??
+          m.read_status ??
+          (m.meta ? m.meta.read : undefined) ??
+          (m.meta ? m.meta.isRead : undefined);
+        return !(raw === undefined || raw === null || raw === '');
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function readStatusTextFor(m) {
+      const b = readBoolFor(m);
+      if (b === null) return '';
+      return b ? '已读' : '未读';
+    }
+
+    function readCountFor(m) {
+      try {
+        if (!m || typeof m !== 'object') return 0;
+        const raw = m.readCount ?? m.read_count ?? (m.meta ? m.meta.readCount : undefined);
+        const n = Number(raw);
+        if (!Number.isFinite(n)) return 0;
+        return Math.max(0, Math.floor(n));
+      } catch (e) {
+        return 0;
+      }
+    }
+
+    function showReadCount(m) {
+      try {
+        if (isGlobalChat.value) return false;
+        if (isSelfChat.value) return false;
+        if (!isGroupChat.value) return false;
+        if (!isOwnMessage(m)) return false;
+        if (!m || typeof m !== 'object') return false;
+        if (isRecalledMessage(m)) return false;
+
+        const raw = m.readCount ?? m.read_count ?? (m.meta ? m.meta.readCount : undefined);
+        if (raw === undefined || raw === null || raw === '') return false;
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
 
     const groupIsOwner = computed(() => {
       if (!selfUserId.value || !groupOwnerId.value) return false;
@@ -2689,6 +2910,8 @@ const app = createApp({
           if (messagesEl.value) {
             messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
           }
+
+          try { queueReadForCurrentChat(); } catch (e0) {}
         } catch (e) {}
       });
 
@@ -2917,6 +3140,11 @@ const app = createApp({
 
         await nextTick();
         scrollMessagesToBottom();
+
+        try {
+          queueReadForCurrentChat();
+          flushReadReportOnce();
+        } catch (e) {}
 
         connectSocket();
         joinSocketRoom(id);
@@ -3243,6 +3471,8 @@ const app = createApp({
         if (messagesEl.value.scrollTop < 80) {
           loadMoreMessages();
         }
+
+        try { queueReadForCurrentChat(); } catch (e0) {}
       } catch (e) {}
     }
 
@@ -3266,10 +3496,16 @@ const app = createApp({
         await openChat(chatId);
       }
 
+      try { startReadReporter(); } catch (e) {}
+
       // 点击页面其他地方关闭上下文菜单
       document.addEventListener('click', () => {
         hideContextMenu();
       });
+    });
+
+    onBeforeUnmount(() => {
+      try { stopReadReporter(); } catch (e) {}
     });
 
     return {
@@ -3288,12 +3524,14 @@ const app = createApp({
       chatLoading,
       loadingMore,
       isGlobalChat,
+      isSelfChat,
       replyTarget,
       replyPreview,
       emojiPanelVisible,
       emojiPacks,
       // group management
       isGroupChat,
+      isDirectChat,
       openGroupManage,
       groupAvatarInputEl,
       openGroupAvatarPicker,
@@ -3349,6 +3587,10 @@ const app = createApp({
       bubbleBackground,
       formatTime,
       shouldShowTimeDivider,
+      showReadCount,
+      readCountFor,
+      showReadStatus,
+      readStatusTextFor,
       repliedRefMessage,
       scrollToMessage,
       toggleMessageTime,
