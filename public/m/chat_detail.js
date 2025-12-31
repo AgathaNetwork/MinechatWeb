@@ -2932,6 +2932,99 @@ const app = createApp({
       s.on('message.recalled', onMessageUpdatedLike);
       s.on('message.updated', onMessageUpdatedLike);
 
+      // --- Read receipt realtime events ---
+      // Note: server sends absolute readCount (not a delta).
+      function applyReadEventToLocalState(payload) {
+        try {
+          const cid = payload && (payload.chatId || payload.chat_id);
+          const current = currentChatId.value;
+          if (cid && current && String(cid) !== String(current)) return;
+
+          const messageId = payload && (payload.messageId || payload.id);
+          const userId = payload && (payload.userId || payload.uid);
+          if (!messageId) return;
+
+          const mid = String(messageId);
+          const m = msgById[mid];
+          if (!m) return;
+
+          // Single chat: mark my outgoing messages as read when the other user reads.
+          try {
+            const fromUser = m.from_user || m.fromUser || m.from;
+            if (selfUserId.value && fromUser && String(fromUser) === String(selfUserId.value)) {
+              if (userId && String(userId) !== String(selfUserId.value)) {
+                const rawRead = payload && (payload.read ?? payload.isRead ?? payload.is_read);
+                if (rawRead === undefined || rawRead === null || rawRead === '') m.read = true;
+                else m.read = !!rawRead;
+              }
+            }
+          } catch (e1) {}
+
+          // Group chat: overwrite absolute readCount.
+          try {
+            if (isGroupChat.value) {
+              const raw =
+                payload && (payload.readCount ?? payload.read_count ?? payload.count ?? payload.readers ?? payload.readUsers);
+              const n = Number(raw);
+              if (Number.isFinite(n)) {
+                m.readCount = Math.max(0, Math.floor(n));
+              }
+            }
+          } catch (e2) {}
+
+          // Trigger reactive update for messages list.
+          try {
+            const list = Array.isArray(messages.value) ? messages.value : [];
+            const idx = list.findIndex((x) => x && x.id && String(x.id) === mid);
+            if (idx >= 0) {
+              list.splice(idx, 1, Object.assign({}, list[idx], m));
+              messages.value = list;
+            }
+          } catch (e3) {}
+        } catch (e) {}
+      }
+
+      s.on('message.read', (payload) => {
+        try {
+          applyReadEventToLocalState(payload || {});
+        } catch (e) {}
+      });
+
+      s.on('message.read.batch', (payload) => {
+        try {
+          const p = payload || {};
+          const baseChatId = p.chatId || p.chat_id;
+          const baseUserId = p.userId || p.uid;
+
+          const items = Array.isArray(p.items)
+            ? p.items
+            : (Array.isArray(p.messages) ? p.messages : (Array.isArray(p.list) ? p.list : null));
+          if (items && Array.isArray(items)) {
+            for (const it of items) {
+              if (!it) continue;
+              const mid = it.messageId || it.id;
+              if (!mid) continue;
+              applyReadEventToLocalState({
+                chatId: baseChatId,
+                messageId: mid,
+                userId: baseUserId,
+                readCount: it.readCount ?? it.read_count ?? it.count,
+                read: it.read ?? it.isRead ?? it.is_read,
+              });
+            }
+            return;
+          }
+
+          const ids = Array.isArray(p.messageIds) ? p.messageIds : (Array.isArray(p.ids) ? p.ids : []);
+          const countsMap = p.counts || p.readCounts || p.read_counts;
+          for (const id of ids) {
+            const k = id !== undefined && id !== null ? String(id) : '';
+            const rc = countsMap && k ? (countsMap[k] ?? countsMap[Number(k)]) : undefined;
+            applyReadEventToLocalState({ chatId: baseChatId, messageId: id, userId: baseUserId, readCount: rc });
+          }
+        } catch (e) {}
+      });
+
       // --- Group/chat lifecycle events (affect current chat UI) ---
       s.on('chat.updated', async (payload) => {
         try {

@@ -1953,16 +1953,23 @@ const app = createApp({
               const fromUser = m.from_user || m.fromUser || m.from;
               if (selfUserId.value && fromUser && String(fromUser) === String(selfUserId.value)) {
                 if (userId && String(userId) !== String(selfUserId.value)) {
-                  m.read = true;
+                  const rawRead = payload && (payload.read ?? payload.isRead ?? payload.is_read);
+                  if (rawRead === undefined || rawRead === null || rawRead === '') m.read = true;
+                  else m.read = !!rawRead;
                 }
               }
             } catch (e1) {}
 
-            // For group chat: increment readCount best-effort.
+            // For group chat: server sends absolute readCount (not a delta).
             try {
               if (isGroupChat.value) {
-                const prev = Number(m.readCount || 0);
-                m.readCount = prev + 1;
+                const raw =
+                  payload &&
+                  (payload.readCount ?? payload.read_count ?? payload.count ?? payload.readers ?? payload.readUsers);
+                const n = Number(raw);
+                if (Number.isFinite(n)) {
+                  m.readCount = Math.max(0, Math.floor(n));
+                }
               }
             } catch (e2) {}
 
@@ -1985,9 +1992,36 @@ const app = createApp({
         s.on('message.read.batch', (payload) => {
           try {
             const p = payload || {};
+            const baseChatId = p.chatId || p.chat_id;
+            const baseUserId = p.userId || p.uid;
+
+            // Preferred: items/messages array with per-message readCount.
+            const items = Array.isArray(p.items)
+              ? p.items
+              : (Array.isArray(p.messages) ? p.messages : (Array.isArray(p.list) ? p.list : null));
+            if (items && Array.isArray(items)) {
+              for (const it of items) {
+                if (!it) continue;
+                const mid = it.messageId || it.id;
+                if (!mid) continue;
+                applyReadEventToLocalState({
+                  chatId: baseChatId,
+                  messageId: mid,
+                  userId: baseUserId,
+                  readCount: it.readCount ?? it.read_count ?? it.count,
+                  read: it.read ?? it.isRead ?? it.is_read,
+                });
+              }
+              return;
+            }
+
+            // Fallback: ids + (optional) counts map.
             const ids = Array.isArray(p.messageIds) ? p.messageIds : (Array.isArray(p.ids) ? p.ids : []);
+            const countsMap = p.counts || p.readCounts || p.read_counts;
             for (const id of ids) {
-              applyReadEventToLocalState({ chatId: p.chatId || p.chat_id, messageId: id, userId: p.userId || p.uid });
+              const k = id !== undefined && id !== null ? String(id) : '';
+              const rc = countsMap && k ? (countsMap[k] ?? countsMap[Number(k)]) : undefined;
+              applyReadEventToLocalState({ chatId: baseChatId, messageId: id, userId: baseUserId, readCount: rc });
             }
           } catch (e) {}
         });
