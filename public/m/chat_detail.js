@@ -275,6 +275,60 @@ const app = createApp({
       return b ? '已读' : '未读';
     }
 
+    async function openReadersDialog(m) {
+      try {
+        if (!m || typeof m !== 'object') return;
+        if (isGlobalChat.value) return;
+        if (isSelfChat.value) return;
+        if (!isOwnMessage(m)) return;
+        if (!m.id) return;
+        if (m.__status === 'sending') {
+          try { ElementPlus.ElMessage.warning('消息发送中，暂无详情'); } catch (e0) {}
+          return;
+        }
+        const mid = String(m.id);
+        if (!mid || mid.startsWith('local-') || mid.startsWith('temp_')) {
+          try { ElementPlus.ElMessage.warning('消息尚未确认，暂无详情'); } catch (e1) {}
+          return;
+        }
+
+        readersDialogVisible.value = true;
+        readersLoading.value = true;
+        readersMessageId.value = mid;
+        readersList.value = [];
+
+        const res = await safeFetch(`${apiBase.value}/messages/${encodeURIComponent(mid)}/readers`);
+        if (!res || !res.ok) {
+          if (res && res.status === 403) {
+            try { ElementPlus.ElMessage.error('仅发送者可查看已读详情'); } catch (e2) {}
+          }
+          readersLoading.value = false;
+          return;
+        }
+        const data = await res.json().catch(() => null);
+        const ids = (data && (data.readerIds || data.readers || data.userIds)) || [];
+        const readerIds = Array.isArray(ids) ? ids.map(String).filter(Boolean) : [];
+
+        try {
+          await fetchMissingUserNames(new Set(readerIds));
+        } catch (e3) {}
+
+        readersList.value = readerIds.map((id) => {
+          const name = userLabel(id) || '未知玩家';
+          const faceUrl = getCachedFaceUrl(id);
+          return { id, name, faceUrl };
+        });
+      } catch (e) {
+        console.error(e);
+      } finally {
+        try { readersLoading.value = false; } catch (e4) {}
+      }
+    }
+
+    function closeReadersDialog() {
+      readersDialogVisible.value = false;
+    }
+
     function readCountFor(m) {
       try {
         if (!m || typeof m !== 'object') return 0;
@@ -450,6 +504,13 @@ const app = createApp({
     const socket = ref(null);
     const joinedChatId = ref(null);
     const replyTarget = ref(null);
+
+    // Read details dialog (reader list)
+    const readersDialogVisible = ref(false);
+    const readersLoading = ref(false);
+    const readersMessageId = ref('');
+    const readersList = ref([]); // [{ id, name, faceUrl }]
+
     const emojiPanelVisible = ref(false);
     const emojiPacks = ref([]);
     const longPressTimer = ref(null);
@@ -1373,6 +1434,33 @@ const app = createApp({
           const face = normalizeFaceUrl(u.faceUrl || u.face_url || u.face || u.face_key || '');
           if (face) userFaceCache[id] = face;
         });
+      } catch (e) {}
+    }
+
+    async function fetchMissingUserNames(ids) {
+      try {
+        const missing = Array.from(ids || []).map(String).filter((id) => id && !userNameCache[id]);
+        if (missing.length === 0) return;
+        await Promise.allSettled(
+          missing.map(async (id) => {
+            try {
+              const res = await safeFetch(`${apiBase.value}/users/${encodeURIComponent(id)}`);
+              if (!res.ok) throw new Error('no user');
+              const u = await res.json().catch(() => null);
+              userNameCache[id] = (u && (u.username || u.displayName || u.name)) || userNameCache[id] || '未知玩家';
+              try {
+                const mc = (u && (u.minecraft_id || u.minecraftId || u.minecraft_uuid || u.minecraftUuid)) || '';
+                if (mc) userMinecraftCache[id] = String(mc);
+              } catch (e2) {}
+              try {
+                const face = normalizeFaceUrl((u && (u.faceUrl || u.face_url || u.face || u.face_key)) || '');
+                if (face) userFaceCache[id] = face;
+              } catch (e3) {}
+            } catch (e) {
+              userNameCache[id] = userNameCache[id] || '未知玩家';
+            }
+          })
+        );
       } catch (e) {}
     }
 
@@ -3717,6 +3805,11 @@ const app = createApp({
       readCountFor,
       showReadStatus,
       readStatusTextFor,
+      readersDialogVisible,
+      readersLoading,
+      readersList,
+      openReadersDialog,
+      closeReadersDialog,
       repliedRefMessage,
       scrollToMessage,
       toggleMessageTime,

@@ -137,12 +137,12 @@
               </template>
             </div>
 
-            <div v-if="showReadCount(m)" style="display:flex;align-items:center;gap:6px;font-size:11px;color:#999;margin-top:4px;padding:0 4px">
+            <div v-if="showReadCount(m)" @click.stop="openReadersDialog(m)" style="display:flex;align-items:center;gap:6px;font-size:11px;color:#999;margin-top:4px;padding:0 4px;cursor:pointer">
               <el-icon style="font-size:14px;line-height:1"><user-filled /></el-icon>
               <span>{{ readCountFor(m) }}</span>
             </div>
 
-            <div v-if="showReadStatus(m)" style="font-size:11px;color:#999;margin-top:4px;padding:0 4px">
+            <div v-if="showReadStatus(m)" @click.stop="openReadersDialog(m)" style="font-size:11px;color:#999;margin-top:4px;padding:0 4px;cursor:pointer">
               {{ readStatusTextFor(m) }}
             </div>
             <div class="msg-time">{{ formatTime(m) }}</div>
@@ -238,6 +238,28 @@
             <el-button @click="cancelMentionDialog">取消</el-button>
             <el-button type="primary" @click="confirmMentionDialog">确定</el-button>
           </template>
+        </el-dialog>
+
+        <el-dialog
+          v-model="readersDialogVisible"
+          title="已读详情"
+          width="92%"
+          :close-on-click-modal="true"
+          @close="closeReadersDialog"
+        >
+          <div v-if="readersLoading" style="padding:8px 0">
+            <el-skeleton animated :rows="4" />
+          </div>
+          <div v-else style="display:flex;flex-direction:column;gap:8px;max-height:360px;overflow:auto">
+            <div v-if="!readersList || readersList.length===0" style="font-size:12px;color:#999">暂无已读用户</div>
+            <div v-for="u in readersList" :key="u.id" style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid #f3f3f3">
+              <el-avatar :size="30" shape="square" :src="u.faceUrl" style="flex-shrink:0">{{ (u.name||'?').slice(0,1) }}</el-avatar>
+              <div style="min-width:0;flex:1">
+                <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ u.name }}</div>
+                <div style="font-size:12px;color:#888">{{ u.id }}</div>
+              </div>
+            </div>
+          </div>
         </el-dialog>
 
         <div v-if="emojiPanelVisible" style="max-height:200px;overflow:auto;background:#fff;border:1px solid #ddd;padding:8px;border-radius:6px;margin-top:8px">

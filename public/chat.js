@@ -45,6 +45,12 @@ const app = createApp({
 
     const replyTarget = ref(null);
 
+    // Read details dialog (reader list)
+    const readersDialogVisible = ref(false);
+    const readersLoading = ref(false);
+    const readersMessageId = ref('');
+    const readersList = ref([]); // [{ id, name, faceUrl }]
+
     const ctxMenuVisible = ref(false);
     const ctxMenuX = ref(0);
     const ctxMenuY = ref(0);
@@ -743,6 +749,60 @@ const app = createApp({
       const b = readBoolFor(m);
       if (b === null) return '';
       return b ? '已读' : '未读';
+    }
+
+    async function openReadersDialog(m) {
+      try {
+        if (!m || typeof m !== 'object') return;
+        if (isGlobalChat.value) return;
+        if (isSelfChat.value) return;
+        if (!isOwnMessage(m)) return;
+        if (!m.id) return;
+        if (m.__status === 'sending') {
+          try { ElementPlus.ElMessage.warning('消息发送中，暂无详情'); } catch (e0) {}
+          return;
+        }
+        const mid = String(m.id);
+        if (!mid || mid.startsWith('local-') || mid.startsWith('temp_')) {
+          try { ElementPlus.ElMessage.warning('消息尚未确认，暂无详情'); } catch (e1) {}
+          return;
+        }
+
+        readersDialogVisible.value = true;
+        readersLoading.value = true;
+        readersMessageId.value = mid;
+        readersList.value = [];
+
+        const res = await safeFetch(`${apiBase.value}/messages/${encodeURIComponent(mid)}/readers`);
+        if (!res || !res.ok) {
+          if (res && res.status === 403) {
+            try { ElementPlus.ElMessage.error('仅发送者可查看已读详情'); } catch (e2) {}
+          }
+          readersLoading.value = false;
+          return;
+        }
+        const data = await res.json().catch(() => null);
+        const ids = (data && (data.readerIds || data.readers || data.userIds)) || [];
+        const readerIds = Array.isArray(ids) ? ids.map(String).filter(Boolean) : [];
+
+        try {
+          await fetchMissingUserNames(new Set(readerIds));
+        } catch (e3) {}
+
+        readersList.value = readerIds.map((id) => {
+          const name = userLabel(id) || '未知玩家';
+          const faceUrl = normalizeAssetUrl(getCachedFaceUrl(id));
+          return { id, name, faceUrl };
+        });
+      } catch (e) {
+        console.error(e);
+      } finally {
+        try { readersLoading.value = false; } catch (e4) {}
+      }
+    }
+
+    function closeReadersDialog() {
+      readersDialogVisible.value = false;
     }
 
     function readCountFor(m) {
@@ -4500,6 +4560,12 @@ const app = createApp({
       imagePreviewDragging,
       imagePreviewStyle,
       replyTarget,
+
+      readersDialogVisible,
+      readersLoading,
+      readersList,
+      openReadersDialog,
+      closeReadersDialog,
       replyPreview,
       emojiPanelVisible,
       emojiPacks,
