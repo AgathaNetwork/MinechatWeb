@@ -59,8 +59,14 @@
           </template>
           <template #default>
             <div v-for="c in chats" :key="c.id" @click="openChat(c)" class="chat-item">
-              <el-avatar v-if="getChatAvatar(c)" shape="square" :src="getChatAvatar(c)" :size="48"></el-avatar>
-              <el-avatar v-else shape="square" :size="48">{{ getChatInitial(c) }}</el-avatar>
+              <div style="position:relative;width:48px;height:48px;flex-shrink:0">
+                <el-avatar v-if="getChatAvatar(c)" shape="square" :src="getChatAvatar(c)" :size="48"></el-avatar>
+                <el-avatar v-else shape="square" :size="48">{{ getChatInitial(c) }}</el-avatar>
+                <span
+                  v-if="isChatPeerOnline(c)"
+                  style="position:absolute;right:-1px;bottom:-1px;width:10px;height:10px;border-radius:50%;background:#1890ff;border:2px solid #fff"
+                ></span>
+              </div>
               <div style="flex:1;min-width:0">
                 <div style="font-weight:500;margin-bottom:4px">{{ getChatName(c) }}</div>
                 <div style="font-size:12px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">

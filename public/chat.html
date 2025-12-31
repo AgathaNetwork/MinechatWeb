@@ -83,8 +83,14 @@
                       :style="{cursor:'pointer',padding:'8px',borderRadius:'6px',marginBottom:'6px',background: currentChatId===c.id ? '#eef6ff' : 'transparent',position:'relative'}">
                     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
                       <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
-                        <el-avatar v-if="getChatAvatar(c)" shape="square" :src="getChatAvatar(c)" :size="40"></el-avatar>
-                        <el-avatar v-else shape="square" :size="40">{{ getChatInitial(c) }}</el-avatar>
+                        <div style="position:relative;width:40px;height:40px;flex-shrink:0">
+                          <el-avatar v-if="getChatAvatar(c)" shape="square" :src="getChatAvatar(c)" :size="40"></el-avatar>
+                          <el-avatar v-else shape="square" :size="40">{{ getChatInitial(c) }}</el-avatar>
+                          <span
+                            v-if="isChatPeerOnline(c)"
+                            style="position:absolute;right:-1px;bottom:-1px;width:10px;height:10px;border-radius:50%;background:#1890ff;border:2px solid #fff"
+                          ></span>
+                        </div>
                         <div style="flex:1;min-width:0">
                           <div style="font-weight:500;margin-bottom:4px">{{ getChatName(c) }}</div>
                           <div style="font-size:12px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">

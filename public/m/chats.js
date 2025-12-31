@@ -14,6 +14,57 @@ const app = createApp({
     const userFaceCache = reactive({});
     const userFetchInFlight = reactive({});
 
+    // --- Presence (online users via socket broadcasts) ---
+    // userId -> true
+    const onlineUserMap = reactive({});
+
+    function setOnlineSnapshot(ids) {
+      try {
+        for (const k of Object.keys(onlineUserMap)) {
+          try { delete onlineUserMap[k]; } catch (e0) {}
+        }
+        const arr = Array.isArray(ids) ? ids : [];
+        for (const id0 of arr) {
+          const id = id0 !== undefined && id0 !== null ? String(id0) : '';
+          if (!id) continue;
+          onlineUserMap[id] = true;
+        }
+      } catch (e) {}
+    }
+
+    function setUserOnline(userId, isOnline) {
+      try {
+        const id = userId !== undefined && userId !== null ? String(userId) : '';
+        if (!id) return;
+        if (isOnline) onlineUserMap[id] = true;
+        else {
+          try { delete onlineUserMap[id]; } catch (e0) {}
+        }
+      } catch (e) {}
+    }
+
+    function isUserOnline(userId) {
+      try {
+        const id = userId !== undefined && userId !== null ? String(userId) : '';
+        return id ? !!onlineUserMap[id] : false;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function isChatPeerOnline(chat) {
+      try {
+        const peerId = getChatPeerId(chat);
+        if (!peerId) return false;
+        if (selfUserId.value && String(peerId) === String(selfUserId.value)) return false;
+        const members = chat && (chat.members || chat.memberIds || chat.member_ids);
+        if (!Array.isArray(members) || members.length !== 2) return false;
+        return isUserOnline(peerId);
+      } catch (e) {
+        return false;
+      }
+    }
+
     const socket = ref(null);
     const joinedRooms = reactive({});
 
@@ -325,8 +376,37 @@ const app = createApp({
         const t = tokenValue();
         if (t) opts.auth = { token: t };
 
+        function attachPresenceHandlers(sock) {
+          try {
+            if (!sock || typeof sock.on !== 'function') return;
+            sock.on('presence.snapshot', (payload) => {
+              try {
+                const ids = payload && (payload.onlineUserIds || payload.online_user_ids || payload.users || payload.userIds);
+                setOnlineSnapshot(ids);
+              } catch (e) {}
+            });
+            sock.on('user.online', (payload) => {
+              try {
+                const uid = payload && (payload.userId || payload.user_id || payload.id);
+                setUserOnline(uid, true);
+              } catch (e) {}
+            });
+            sock.on('user.offline', (payload) => {
+              try {
+                const uid = payload && (payload.userId || payload.user_id || payload.id);
+                setUserOnline(uid, false);
+              } catch (e) {}
+            });
+            sock.on('disconnect', () => {
+              try { setOnlineSnapshot([]); } catch (e) {}
+            });
+          } catch (e) {}
+        }
+
         const s = window.io(socketUrl, opts);
         socket.value = s;
+
+        try { attachPresenceHandlers(s); } catch (e0) {}
 
         s.on('connect', () => {
           try {
@@ -346,6 +426,7 @@ const app = createApp({
                 withCredentials: true,
               });
               socket.value = s2;
+              try { attachPresenceHandlers(s2); } catch (e2) {}
             } catch (e) {}
           }
         });
@@ -802,6 +883,7 @@ const app = createApp({
       getChatName,
       getChatAvatar,
       getChatInitial,
+      isChatPeerOnline,
       formatLastMessage,
       lastMessagePreviewTag,
       lastMessagePreviewSuffix,
