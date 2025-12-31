@@ -1672,6 +1672,21 @@ const app = createApp({
           }
         }
 
+        // Merge read fields if server provided them (keep optimistic defaults otherwise).
+        try {
+          const rawRc = serverMsg.readCount ?? serverMsg.read_count ?? (serverMsg.meta ? serverMsg.meta.readCount : undefined);
+          if (!(rawRc === undefined || rawRc === null || rawRc === '')) {
+            const n = Number(rawRc);
+            if (Number.isFinite(n)) optimistic.readCount = Math.max(0, Math.floor(n));
+          }
+        } catch (e4) {}
+        try {
+          const rawRead = serverMsg.read ?? serverMsg.isRead ?? serverMsg.is_read ?? (serverMsg.meta ? serverMsg.meta.read : undefined);
+          if (!(rawRead === undefined || rawRead === null || rawRead === '')) {
+            optimistic.read = !!rawRead;
+          }
+        } catch (e5) {}
+
         msgById[serverId] = optimistic;
       } catch (e) {
         // ignore
@@ -4090,6 +4105,17 @@ const app = createApp({
         __own: true,
         __status: 'sending',
       };
+
+      // Ensure read UI can render immediately for newly sent messages.
+      // - direct chat: show "未读" by default
+      // - group chat: show 0 readers by default
+      try {
+        if (!isGlobalChat.value && !isSelfChat.value) {
+          if (isGroupChat.value) optimisticMsg.readCount = 0;
+          else if (isDirectChat.value) optimisticMsg.read = false;
+        }
+      } catch (e) {}
+
       if (!isGlobalChat.value && replyTarget.value) optimisticMsg.replied_to = replyTarget.value;
       msgById[tempId] = optimisticMsg;
       messages.value = messages.value.concat([optimisticMsg]);
@@ -4187,6 +4213,15 @@ const app = createApp({
         __own: true,
         __status: 'sending',
       };
+
+      // Ensure read UI can render immediately for newly sent messages.
+      try {
+        if (!isGlobalChat.value && !isSelfChat.value) {
+          if (isGroupChat.value) optimisticMsg.readCount = 0;
+          else if (isDirectChat.value) optimisticMsg.read = false;
+        }
+      } catch (e) {}
+
       if (replyTarget.value) optimisticMsg.replied_to = replyTarget.value;
       msgById[tempId] = optimisticMsg;
       messages.value = messages.value.concat([optimisticMsg]);
@@ -4270,6 +4305,15 @@ const app = createApp({
         __own: true,
         __status: 'sending',
       };
+
+      // Ensure read UI can render immediately for newly sent messages.
+      try {
+        if (!isGlobalChat.value && !isSelfChat.value) {
+          if (isGroupChat.value) optimisticMsg.readCount = 0;
+          else if (isDirectChat.value) optimisticMsg.read = false;
+        }
+      } catch (e) {}
+
       if (replyTarget.value) optimisticMsg.replied_to = replyTarget.value;
 
       msgById[tempId] = optimisticMsg;
