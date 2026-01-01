@@ -24,7 +24,7 @@
     <div id="app" v-cloak>
       <div class="top-bar">
         <h3 style="margin:0">工作台</h3>
-        <el-button v-if="isLoggedIn" size="small" @click="logout">登出</el-button>
+        <span></span>
       </div>
 
       <div class="content-area">
@@ -48,7 +48,17 @@
                 <div style="flex:1">
                   <div style="font-size:18px;font-weight:600;margin-bottom:4px">{{ selfDisplayName }}</div>
                   <div style="font-size:13px;color:#888">{{ selfIdHint }}</div>
+                  <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                    <el-tag size="small" :type="selfOnlineDisplay ? 'success' : 'info'">{{ selfOnlineDisplay ? '在线' : '离线' }}</el-tag>
+                  </div>
                 </div>
+              </div>
+
+              <div style="padding:0 12px 12px">
+                <el-table :data="profileRows" border size="small" style="width:100%;margin-top:10px" :show-header="false">
+                  <el-table-column prop="k" width="120"></el-table-column>
+                  <el-table-column prop="v"></el-table-column>
+                </el-table>
               </div>
 
               <el-divider></el-divider>
@@ -56,17 +66,47 @@
               <div style="padding:0 12px 12px">
                 <div class="action-row">
                   <el-button plain type="primary" :loading="updating" :disabled="!isLoggedIn || updating || loading" @click="updateFace">更新头像</el-button>
+                  <el-button plain :disabled="!isLoggedIn || updating || loading" @click="logout">登出</el-button>
                 </div>
               </div>
             </template>
           </el-skeleton>
+        </el-card>
 
-          <div v-if="lastResult" style="margin-top:12px;padding:0 12px 12px">
-            <el-alert type="success" :closable="false" show-icon title="更新成功"></el-alert>
-          </div>
+        <div v-if="lastResult" style="margin-top:12px">
+          <el-alert type="success" :closable="false" show-icon title="更新成功"></el-alert>
+        </div>
 
-          <div v-if="lastError" style="margin-top:12px;padding:0 12px 12px">
-            <el-alert type="error" :closable="false" show-icon :title="lastError"></el-alert>
+        <div v-if="lastError" style="margin-top:12px">
+          <el-alert type="error" :closable="false" show-icon title="更新失败"></el-alert>
+          <div style="margin-top:8px;font-size:12px;color:#666;word-break:break-all">{{ lastError }}</div>
+        </div>
+
+        <el-card style="margin-top:12px">
+          <template #header>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-weight:600">账户服务</span>
+            </div>
+          </template>
+
+          <div style="padding:12px">
+            <el-card shadow="never">
+              <template #header>
+                <span style="font-weight:600">实名认证查询</span>
+              </template>
+              <div class="action-row">
+                <el-button type="primary" plain @click="openIdDialog">打开</el-button>
+              </div>
+            </el-card>
+
+            <el-card shadow="never" style="margin-top:12px">
+              <template #header>
+                <span style="font-weight:600">登录记录查询</span>
+              </template>
+              <div class="action-row">
+                <el-button type="primary" plain @click="openHistoryDialog">打开</el-button>
+              </div>
+            </el-card>
           </div>
         </el-card>
       </div>
@@ -85,6 +125,37 @@
           <span>工作台</span>
         </a>
       </div>
+
+        <el-dialog v-model="idDialogVisible" title="实名认证查询" width="92%" top="10vh">
+          <el-alert v-if="!isLoggedIn" type="warning" :closable="false" show-icon title="需要登录后才能查询"></el-alert>
+          <div style="margin-top:12px;font-size:12px;color:#888" v-if="idLoading">加载中…</div>
+          <div style="margin-top:12px" v-if="idError">
+            <el-alert type="error" :closable="false" show-icon title="查询失败"></el-alert>
+            <div style="margin-top:8px;font-size:12px;color:#666;word-break:break-all">{{ idError }}</div>
+          </div>
+          <div style="margin-top:12px" v-if="idRows && idRows.length">
+            <el-table :data="idRows" border size="small" style="width:100%" :show-header="false">
+              <el-table-column prop="k" width="120"></el-table-column>
+              <el-table-column prop="v"></el-table-column>
+            </el-table>
+          </div>
+        </el-dialog>
+
+        <el-dialog v-model="historyDialogVisible" title="登录记录查询" width="92%" top="10vh">
+          <el-alert v-if="!isLoggedIn" type="warning" :closable="false" show-icon title="需要登录后才能查询"></el-alert>
+          <div style="margin-top:12px;font-size:12px;color:#888" v-if="historyLoading">加载中…</div>
+          <div style="margin-top:6px;font-size:12px;color:#888" v-else-if="historyList && historyList.length">共 {{ historyList.length }} 条，最多显示10条</div>
+          <div style="margin-top:12px" v-if="historyError">
+            <el-alert type="error" :closable="false" show-icon title="查询失败"></el-alert>
+            <div style="margin-top:8px;font-size:12px;color:#666;word-break:break-all">{{ historyError }}</div>
+          </div>
+          <div style="margin-top:12px" v-if="historyList && historyList.length">
+            <el-table :data="historyList" size="small" style="width:100%">
+              <el-table-column prop="time" label="时间" min-width="140"></el-table-column>
+              <el-table-column prop="ip" label="IP" min-width="110"></el-table-column>
+            </el-table>
+          </div>
+        </el-dialog>
     </div>
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
