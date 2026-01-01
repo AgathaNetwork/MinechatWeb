@@ -59,7 +59,7 @@ createApp({
     const selfIdHint = computed(() => {
       const uuid = (selfMinecraftUuid.value || '').trim();
       if (!uuid) return '';
-      return `UUID: ${uuid}`;
+      return uuid;
     });
 
     const selfRegisterHint = computed(() => {

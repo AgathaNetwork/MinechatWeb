@@ -44,7 +44,7 @@
 
             <template #default>
               <div style="display:flex;gap:16px;align-items:center;padding:12px">
-                <el-avatar shape="square" :src="selfFaceUrl || ''" :size="64">{{ selfInitial }}</el-avatar>
+                <el-avatar shape="square" :src="selfFaceUrl || ''" :size="64" style="flex:0 0 auto">{{ selfInitial }}</el-avatar>
                 <div style="flex:1">
                   <div style="font-size:18px;font-weight:600;margin-bottom:4px">{{ selfDisplayName }}</div>
                   <div style="font-size:13px;color:#888">{{ selfIdHint }}</div>
@@ -60,8 +60,6 @@
                   <el-table-column prop="v"></el-table-column>
                 </el-table>
               </div>
-
-              <el-divider></el-divider>
 
               <div style="padding:0 12px 12px">
                 <div class="action-row">

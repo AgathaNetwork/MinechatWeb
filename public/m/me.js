@@ -41,7 +41,7 @@ const app = createApp({
     const selfDisplayName = computed(() => selfUsername.value || selfUserId.value || '未登录');
     const selfIdHint = computed(() => {
       const uuid = (selfMinecraftUuid.value || '').trim();
-      return uuid ? `UUID: ${uuid}` : '';
+      return uuid ? uuid : '';
     });
     const selfInitial = computed(() => {
       const name = selfUsername.value || selfUserId.value || '?';
