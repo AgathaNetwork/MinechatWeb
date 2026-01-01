@@ -15,6 +15,58 @@ const app = createApp({
     const selectedMap = reactive({});
     const createGroupLoading = ref(false);
 
+    const briefDialogVisible = ref(false);
+    const briefLoading = ref(false);
+    const briefError = ref('');
+    const briefRows = ref([]);
+    const briefDisplayName = ref('');
+    const briefUuid = ref('');
+    const briefFaceUrl = ref('');
+    const briefInitial = ref('');
+
+    function parseDate(v) {
+      try {
+        if (v === null || v === undefined) return null;
+        if (typeof v === 'number') {
+          const d = new Date(v);
+          return isNaN(d.getTime()) ? null : d;
+        }
+        const s = String(v).trim();
+        if (!s) return null;
+        const n = Number(s);
+        if (!Number.isNaN(n) && n > 0 && s.length >= 10) {
+          const d = new Date(n);
+          if (!isNaN(d.getTime())) return d;
+        }
+        const d2 = new Date(s);
+        return isNaN(d2.getTime()) ? null : d2;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function formatYmd(d) {
+      try {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${dd}`;
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function formatYmdHm(d) {
+      try {
+        const ymd = formatYmd(d);
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        return ymd ? `${ymd} ${hh}:${mm}` : '';
+      } catch (e) {
+        return '';
+      }
+    }
+
     const filtered = computed(() => {
       const query = (q.value || '').trim().toLowerCase();
       if (!query) return users.value;
@@ -185,6 +237,54 @@ const app = createApp({
       }
     }
 
+    async function openBrief(user) {
+      briefDialogVisible.value = true;
+      briefLoading.value = true;
+      briefError.value = '';
+      briefRows.value = [];
+
+      const name = user && (user.username || user.id) ? String(user.username || user.id) : '';
+      const uuid = user && (user.mcUuid || user.minecraftUuid || user.uuid) ? String(user.mcUuid || user.minecraftUuid || user.uuid) : '';
+      const face = user && (user.faceUrl || user.face_url || user.face) ? String(user.faceUrl || user.face_url || user.face) : '';
+
+      briefDisplayName.value = name || '未知玩家';
+      briefUuid.value = uuid || '';
+      briefFaceUrl.value = face || '';
+      briefInitial.value = (briefDisplayName.value || '?').slice(0, 1).toUpperCase();
+
+      if (!name) {
+        briefError.value = '缺少用户名';
+        briefLoading.value = false;
+        return;
+      }
+
+      try {
+        const res = await safeFetch(`${apiBase.value}/info/playerBrief?username=${encodeURIComponent(name)}`);
+        if (!res.ok) {
+          const txt = await res.text().catch(() => '');
+          throw new Error(txt || `HTTP ${res.status}`);
+        }
+        const data = await res.json().catch(() => null);
+        if (!data || typeof data !== 'object' || Number(data.return) !== 1) {
+          briefError.value = '未查询到玩家信息';
+          return;
+        }
+
+        const levelText = data.level === null || data.level === undefined || data.level === '' ? '-' : String(data.level);
+        const regDt = parseDate(data.regDate);
+        const lastDt = parseDate(data.lastLogin);
+        briefRows.value = [
+          { k: '等级', v: levelText },
+          { k: '注册时间', v: regDt ? formatYmd(regDt) : '-' },
+          { k: '上次上线', v: lastDt ? formatYmdHm(lastDt) : '-' },
+        ];
+      } catch (e) {
+        briefError.value = e && e.message ? e.message : String(e);
+      } finally {
+        briefLoading.value = false;
+      }
+    }
+
     function onInput() {
       // Auto filter on input change
     }
@@ -205,8 +305,20 @@ const app = createApp({
       filtered,
       q,
       openChat,
+      openBrief,
       onInput,
       usersLoading,
+
+      // brief dialog
+      briefDialogVisible,
+      briefLoading,
+      briefError,
+      briefRows,
+      briefDisplayName,
+      briefUuid,
+      briefFaceUrl,
+      briefInitial,
+
       // group
       selfUserId,
       groupMode,

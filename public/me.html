@@ -67,11 +67,6 @@
                   <el-table-column prop="k" width="120"></el-table-column>
                   <el-table-column prop="v"></el-table-column>
                 </el-table>
-
-                <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                  <el-button plain type="primary" :loading="updating" :disabled="!isLoggedIn || updating || loading" @click="updateFace">更新头像</el-button>
-                  <el-button plain :disabled="!isLoggedIn || updating || loading" @click="logout">登出</el-button>
-                </div>
               </template>
             </el-skeleton>
 
@@ -92,24 +87,14 @@
               </div>
             </template>
 
-            <div style="display:flex;gap:12px;flex-wrap:wrap">
-              <el-card shadow="never" style="flex:1;min-width:240px">
-                <template #header>
-                  <span style="font-weight:600">实名认证查询</span>
-                </template>
-                <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                  <el-button type="primary" plain @click="openIdDialog">打开</el-button>
-                </div>
-              </el-card>
-
-              <el-card shadow="never" style="flex:1;min-width:240px">
-                <template #header>
-                  <span style="font-weight:600">登录记录查询</span>
-                </template>
-                <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                  <el-button type="primary" plain @click="openHistoryDialog">打开</el-button>
-                </div>
-              </el-card>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <el-button plain @click="openIdDialog">实名认证查询</el-button>
+              <el-button plain @click="openHistoryDialog">登录记录查询</el-button>
+              <el-button plain :loading="updating" :disabled="!isLoggedIn || updating || loading" @click="updateFace">更新头像</el-button>
+              <el-button plain :disabled="!isLoggedIn || updating || loading" @click="logout">
+                <el-icon style="margin-right:4px"><top-right /></el-icon>
+                登出
+              </el-button>
             </div>
           </el-card>
 
@@ -153,6 +138,7 @@
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
     <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue@2/dist/index.iife.min.js"></script>
     <script src="/me.js"></script>
   </body>
 </html>

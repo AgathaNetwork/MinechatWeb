@@ -69,11 +69,56 @@
                   <div style="font-size:12px;color:#888">{{ u.mcUuid || '' }}</div>
                 </div>
               </div>
-              <el-button size="small" type="primary" @click="openChat(u.id)">私聊</el-button>
+              <div style="display:flex;gap:8px;align-items:center">
+                <el-button size="small" type="primary" plain circle title="查看" @click="openBrief(u)">
+                  <el-icon><view /></el-icon>
+                </el-button>
+                <el-button size="small" type="primary" plain circle title="私聊" @click="openChat(u.id)">
+                  <el-icon><chat-line-round /></el-icon>
+                </el-button>
+              </div>
             </div>
           </template>
         </el-skeleton>
       </div>
+
+      <el-dialog v-model="briefDialogVisible" title="玩家信息" width="92%" top="10vh">
+        <el-skeleton :loading="briefLoading" animated>
+          <template #template>
+            <div style="display:flex;gap:16px;align-items:center;margin-top:10px">
+              <el-skeleton-item variant="image" style="width:56px;height:56px;border-radius:8px"></el-skeleton-item>
+              <div style="flex:1">
+                <el-skeleton-item variant="text" style="width:45%"></el-skeleton-item>
+                <el-skeleton-item variant="text" style="width:65%;margin-top:10px"></el-skeleton-item>
+              </div>
+            </div>
+            <el-skeleton-item variant="text" style="width:100%;margin-top:14px"></el-skeleton-item>
+            <el-skeleton-item variant="text" style="width:45%;margin-top:10px"></el-skeleton-item>
+          </template>
+
+          <template #default>
+            <div style="display:flex;gap:16px;align-items:center;margin-top:10px">
+              <el-avatar shape="square" :src="briefFaceUrl || ''" :size="56" style="flex:0 0 auto">{{ briefInitial }}</el-avatar>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:16px;font-weight:600;line-height:1.4">{{ briefDisplayName }}</div>
+                <div style="font-size:12px;color:#888;line-height:1.6;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ briefUuid }}</div>
+              </div>
+            </div>
+
+            <div style="margin-top:12px" v-if="briefError">
+              <el-alert type="error" :closable="false" show-icon title="加载失败"></el-alert>
+              <div style="margin-top:8px;font-size:12px;color:#666;word-break:break-all">{{ briefError }}</div>
+            </div>
+
+            <div style="margin-top:12px" v-if="briefRows && briefRows.length">
+              <el-table :data="briefRows" border size="small" style="width:100%" :show-header="false">
+                <el-table-column prop="k" width="120"></el-table-column>
+                <el-table-column prop="v"></el-table-column>
+              </el-table>
+            </div>
+          </template>
+        </el-skeleton>
+      </el-dialog>
 
       <div class="bottom-nav">
         <a href="/m/chats.html" class="nav-item">

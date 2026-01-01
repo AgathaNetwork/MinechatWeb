@@ -1,7 +1,7 @@
 // Vue 3 players page
 const { createApp, ref, onMounted } = Vue;
 
-createApp({
+const app = createApp({
   setup(){
     const apiBase = ref('');
     const token = ref(localStorage.getItem('token') || null);
@@ -16,6 +16,58 @@ createApp({
     const groupName = ref('');
     const selectedMap = ref({});
     const createGroupLoading = ref(false);
+
+    const briefDialogVisible = ref(false);
+    const briefLoading = ref(false);
+    const briefError = ref('');
+    const briefRows = ref([]);
+    const briefDisplayName = ref('');
+    const briefUuid = ref('');
+    const briefFaceUrl = ref('');
+    const briefInitial = ref('');
+
+    function parseDate(v){
+      try{
+        if(v === null || v === undefined) return null;
+        if(typeof v === 'number'){
+          const d = new Date(v);
+          return isNaN(d.getTime()) ? null : d;
+        }
+        const s = String(v).trim();
+        if(!s) return null;
+        const n = Number(s);
+        if(!Number.isNaN(n) && n > 0 && s.length >= 10){
+          const d = new Date(n);
+          if(!isNaN(d.getTime())) return d;
+        }
+        const d2 = new Date(s);
+        return isNaN(d2.getTime()) ? null : d2;
+      }catch(e){
+        return null;
+      }
+    }
+
+    function formatYmd(d){
+      try{
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${dd}`;
+      }catch(e){
+        return '';
+      }
+    }
+
+    function formatYmdHm(d){
+      try{
+        const ymd = formatYmd(d);
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        return ymd ? `${ymd} ${hh}:${mm}` : '';
+      }catch(e){
+        return '';
+      }
+    }
 
     function tokenValue(){
       const t = (token.value || '').trim();
@@ -237,6 +289,54 @@ createApp({
       }catch(e){ console.error(e); alert('打开或创建私聊失败'); }
     }
 
+    async function openBrief(user){
+      briefDialogVisible.value = true;
+      briefLoading.value = true;
+      briefError.value = '';
+      briefRows.value = [];
+
+      const name = user && (user.username || user.id) ? String(user.username || user.id) : '';
+      const uuid = user && (user.mcUuid || user.minecraftUuid || user.uuid) ? String(user.mcUuid || user.minecraftUuid || user.uuid) : '';
+      const face = user && (user.faceUrl || user.face_url || user.face) ? String(user.faceUrl || user.face_url || user.face) : '';
+
+      briefDisplayName.value = name || '未知玩家';
+      briefUuid.value = uuid || '';
+      briefFaceUrl.value = face || '';
+      briefInitial.value = (briefDisplayName.value || '?').slice(0, 1).toUpperCase();
+
+      if(!name){
+        briefError.value = '缺少用户名';
+        briefLoading.value = false;
+        return;
+      }
+
+      try{
+        const res = await safeFetch(`${apiBase.value}/info/playerBrief?username=${encodeURIComponent(name)}`);
+        if(!res.ok){
+          const txt = await res.text().catch(()=> '');
+          throw new Error(txt || `HTTP ${res.status}`);
+        }
+        const data = await res.json().catch(()=> null);
+        if(!data || typeof data !== 'object' || Number(data.return) !== 1){
+          briefError.value = '未查询到玩家信息';
+          return;
+        }
+
+        const levelText = data.level === null || data.level === undefined || data.level === '' ? '-' : String(data.level);
+        const regDt = parseDate(data.regDate);
+        const lastDt = parseDate(data.lastLogin);
+        briefRows.value = [
+          { k: '等级', v: levelText },
+          { k: '注册时间', v: regDt ? formatYmd(regDt) : '-' },
+          { k: '上次上线', v: lastDt ? formatYmdHm(lastDt) : '-' },
+        ];
+      }catch(e){
+        briefError.value = e && e.message ? e.message : String(e);
+      }finally{
+        briefLoading.value = false;
+      }
+    }
+
     function onNav(key){
       if(key === 'chat') window.location.href = '/chat.html';
       else if(key === 'players') window.location.href = '/players.html';
@@ -251,10 +351,22 @@ createApp({
       filtered,
       onInput,
       openChat,
+      openBrief,
       logout,
       onNav,
       selfFaceUrl,
       usersLoading,
+
+      // brief dialog
+      briefDialogVisible,
+      briefLoading,
+      briefError,
+      briefRows,
+      briefDisplayName,
+      briefUuid,
+      briefFaceUrl,
+      briefInitial,
+
       // group
       selfUserId,
       groupMode,
@@ -268,4 +380,15 @@ createApp({
       createGroupChat,
     };
   }
-}).use(ElementPlus).mount('#app');
+});
+
+try {
+  const icons = window.ElementPlusIconsVue;
+  if (icons && typeof icons === 'object') {
+    for (const [key, component] of Object.entries(icons)) {
+      app.component(key, component);
+    }
+  }
+} catch (e) {}
+
+app.use(ElementPlus).mount('#app');
