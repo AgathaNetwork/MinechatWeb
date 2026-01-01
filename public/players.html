@@ -68,13 +68,13 @@
                       <div style="font-weight:600;display:flex;align-items:center;gap:8px">
                         <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ u.username || u.id }}</span>
                       </div>
-					  <div style="font-size:12px;color:#888">{{ u.mcUuid || '' }}</div>
+					            <div style="font-size:12px;color:#888">{{ u.mcUuid || '' }}</div>
                     </div>
                   </div>
                   <div>
                     <div style="display:flex;gap:8px;align-items:center">
                       <el-button size="small" type="primary" plain circle title="查看" @click="openBrief(u)">
-                        <el-icon><view /></el-icon>
+                        <el-icon><postcard /></el-icon>
                       </el-button>
                       <el-button size="small" type="primary" plain circle title="私聊" @click="openChat(u.id)">
                         <el-icon><chat-line-round /></el-icon>
