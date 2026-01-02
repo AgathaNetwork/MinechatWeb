@@ -101,7 +101,7 @@
                   <el-tag type="info" effect="plain" size="small">{{ messagePreviewTag(repliedRefMessage(m)) }}</el-tag>
                   <span v-if="messagePreviewSuffix(repliedRefMessage(m))" style="margin-left:6px;color:#666">{{ messagePreviewSuffix(repliedRefMessage(m)) }}</span>
                 </template>
-                <template v-else>
+                <template v-if="!messagePreviewTag(repliedRefMessage(m))">
                   {{ messagePreviewText(repliedRefMessage(m)) || '已回复' }}
                 </template>
               </span>
@@ -111,43 +111,48 @@
               <template v-if="isRecalledMessage(m)">
                 <el-tag type="info" effect="plain" size="small">{{ recallNoticeText(m) }}</el-tag>
               </template>
-              <template v-else-if="m.type==='emoji' && m.content && m.content.url">
+              <template v-if="!isRecalledMessage(m) && m.type==='emoji' && m.content && m.content.url">
                 <img :src="m.content.url" alt="emoji" style="max-height:96px;display:block;cursor:pointer" @click.stop="openImagePreview(m.content.url)" />
               </template>
-              <template v-else-if="m.type==='file' && m.content && isImageFile(m)">
+              <template v-if="!isRecalledMessage(m) && m.type==='file' && m.content && isImageFile(m)">
                 <img :src="fileDisplayUrl(m)" :alt="m.content.filename || 'image'" style="max-width:100%;max-height:200px;display:block;border-radius:6px;cursor:pointer" @click.stop="openImagePreview(fileOriginalUrl(m))" />
               </template>
-              <template v-else-if="m.type==='file' && m.content && isVideoFile(m)">
+              <template v-if="!isRecalledMessage(m) && m.type==='file' && m.content && isVideoFile(m)">
                 <video :src="fileDisplayUrl(m)" controls style="max-width:100%;max-height:240px;display:block;border-radius:8px"></video>
                 <div v-if="m.content.filename" style="margin-top:6px;font-size:12px;color:#666">{{ messageFilename(m) }}</div>
               </template>
-              <template v-else-if="m.type==='file' && m.content && (m.content.url || m.content.__localUrl)">
+              <template v-if="!isRecalledMessage(m) && m.type==='file' && m.content && (m.content.url || m.content.__localUrl)">
                 <a :href="fileDisplayUrl(m)" target="_blank" rel="noopener" style="color:#0366d6;text-decoration:none">
                   {{ messageFilename(m) || '下载文件' }}
                 </a>
               </template>
-              <template v-else-if="m.type==='player_card' && m.content">
+              <template v-if="!isRecalledMessage(m) && m.type==='player_card' && m.content">
                 <div style="display:flex;gap:10px;align-items:center;min-width:200px">
                   <el-avatar shape="square" :src="m.content.faceUrl || ''" :size="42" style="flex:0 0 auto">{{ (m.content.name||'?').slice(0,1).toUpperCase() }}</el-avatar>
                   <div style="min-width:0;flex:1">
                     <div style="font-weight:600;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ m.content.name || '未知玩家' }}</div>
                     <div style="font-size:12px;color:#888;line-height:1.5">
                       <span v-if="m.content.level!==null && m.content.level!==undefined">等级：{{ m.content.level }}</span>
-                      <span v-else>等级：-</span>
+                      <span v-if="m.content.level===null || m.content.level===undefined">等级：-</span>
                       <span style="margin-left:10px">UID：{{ m.content.uid || '-' }}</span>
                     </div>
                     <div v-if="m.content.minecraftUuid" style="font-size:12px;color:#999;line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ m.content.minecraftUuid }}</div>
                   </div>
                 </div>
               </template>
-              <template v-else>
+              <template v-if="!isRecalledMessage(m)
+                && !(m.type==='emoji' && m.content && m.content.url)
+                && !(m.type==='file' && m.content && isImageFile(m))
+                && !(m.type==='file' && m.content && isVideoFile(m))
+                && !(m.type==='file' && m.content && (m.content.url || m.content.__localUrl))
+                && !(m.type==='player_card' && m.content)">
                 <span v-if="m.type==='text'" style="white-space:pre-wrap;word-break:break-word">
                   <template v-for="(p, i) in messageTextParts(m)" :key="i">
                     <el-tag v-if="p.t==='mention'" type="info" effect="plain" size="small" style="margin:0 2px">{{ p.v }}</el-tag>
-                    <span v-else>{{ p.v }}</span>
+                    <span v-if="p.t!=='mention'">{{ p.v }}</span>
                   </template>
                 </span>
-                <span v-else style="white-space:pre-wrap;word-break:break-word">{{ messageTextPreview(m) }}</span>
+                <span v-if="m.type!=='text'" style="white-space:pre-wrap;word-break:break-word">{{ messageTextPreview(m) }}</span>
               </template>
             </div>
 
@@ -181,7 +186,7 @@
               <el-tag type="info" effect="plain" size="small">{{ messagePreviewTag(replyTarget) }}</el-tag>
               <span v-if="messagePreviewSuffix(replyTarget)" style="margin-left:6px;color:#666">{{ messagePreviewSuffix(replyTarget) }}</span>
             </template>
-            <template v-else>
+            <template v-if="!messagePreviewTag(replyTarget)">
               {{ messagePreviewText(replyTarget) || '消息' }}
             </template>
           </span>
@@ -240,7 +245,7 @@
                       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
                         <span style="font-weight:500">{{ userLabel(mid) }}</span>
                         <el-tag v-if="String(mid)===String(groupOwnerId)" type="info" effect="plain" size="small">群主</el-tag>
-                        <el-tag v-else-if="groupAdmins.includes(String(mid))" type="info" effect="plain" size="small">管理员</el-tag>
+                        <el-tag v-if="String(mid)!==String(groupOwnerId) && groupAdmins.includes(String(mid))" type="info" effect="plain" size="small">管理员</el-tag>
                       </div>
                       <div style="font-size:12px;color:#888">{{ userMinecraftId(mid) || '未绑定minecraft uuid' }}</div>
                     </div>
@@ -267,7 +272,7 @@
           <div v-if="readersLoading" style="padding:8px 0">
             <el-skeleton animated :rows="4" />
           </div>
-          <div v-else style="display:flex;flex-direction:column;gap:8px;max-height:360px;overflow:auto">
+          <div v-if="!readersLoading" style="display:flex;flex-direction:column;gap:8px;max-height:360px;overflow:auto">
             <div v-if="!readersList || readersList.length===0" style="font-size:12px;color:#999">暂无已读用户</div>
             <div v-for="u in readersList" :key="u.id" style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid #f3f3f3">
               <el-avatar :size="30" shape="square" :src="u.faceUrl" style="flex-shrink:0">{{ (u.name||'?').slice(0,1) }}</el-avatar>
@@ -304,7 +309,7 @@
           <div style="display:flex;flex-direction:column;gap:10px">
             <el-input v-model="playerCardQuery" placeholder="搜索玩家（用户名/ID）" clearable />
             <el-skeleton v-if="playerCardLoading" animated :rows="6" />
-            <div v-else style="max-height:420px;overflow:auto;border:1px solid #eee;border-radius:8px;background:#fff">
+            <div v-if="!playerCardLoading" style="max-height:420px;overflow:auto;border:1px solid #eee;border-radius:8px;background:#fff">
               <div
                 v-for="u in playerCardFiltered"
                 :key="u.id"
@@ -330,7 +335,7 @@
         <div v-if="groupManageLoading" style="padding:16px">
           <el-skeleton animated :rows="5" />
         </div>
-        <div v-else style="padding:0 4px">
+        <div v-if="!groupManageLoading" style="padding:0 4px">
           <input ref="groupAvatarInputEl" type="file" accept="image/*" style="display:none" @change="onGroupAvatarSelected" />
 
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -344,7 +349,7 @@
             <div style="display:flex;gap:10px;align-items:center;justify-content:space-between">
               <div style="display:flex;align-items:center;gap:8px">
                 <el-avatar v-if="currentChatFaceUrl" shape="square" :src="currentChatFaceUrl" :size="36"></el-avatar>
-                <el-avatar v-else shape="square" :size="36">群</el-avatar>
+                <el-avatar v-if="!currentChatFaceUrl" shape="square" :size="36">群</el-avatar>
                 <div style="font-size:12px;color:#888">仅群主/管理员可设置</div>
               </div>
               <el-button type="primary" plain size="small" :loading="groupActionLoading" @click="openGroupAvatarPicker">设置</el-button>
@@ -369,7 +374,7 @@
                   <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
                     <span style="font-weight:500">{{ userLabel(mid) }}</span>
                     <el-tag v-if="String(mid)===String(groupOwnerId)" type="info" effect="plain" size="small">群主</el-tag>
-                    <el-tag v-else-if="groupAdmins.includes(String(mid))" type="info" effect="plain" size="small">管理员</el-tag>
+                    <el-tag v-if="String(mid)!==String(groupOwnerId) && groupAdmins.includes(String(mid))" type="info" effect="plain" size="small">管理员</el-tag>
                   </div>
                   <div style="font-size:12px;color:#888">{{ userMinecraftId(mid) || '未绑定minecraft uuid' }}</div>
                 </div>
