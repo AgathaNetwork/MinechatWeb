@@ -44,7 +44,7 @@
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <el-button v-if="!isLoggedIn" size="small" type="primary" @click="openLoginPopup">使用 Microsoft 登录</el-button>
-            <el-button v-else size="small" @click="logout">登出</el-button>
+            <el-button v-if="isLoggedIn" size="small" @click="logout">登出</el-button>
             <el-avatar v-if="isLoggedIn && selfFaceUrl" shape="square" :src="selfFaceUrl" :size="28" @click="onNav('me')" style="cursor:pointer"></el-avatar>
           </div>
         </el-header>
@@ -85,7 +85,7 @@
                       <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
                         <div style="position:relative;width:40px;height:40px;flex-shrink:0">
                           <el-avatar v-if="getChatAvatar(c)" shape="square" :src="getChatAvatar(c)" :size="40"></el-avatar>
-                          <el-avatar v-else shape="square" :size="40">{{ getChatInitial(c) }}</el-avatar>
+                          <el-avatar v-if="!getChatAvatar(c)" shape="square" :size="40">{{ getChatInitial(c) }}</el-avatar>
                           <span
                             v-if="isChatPeerOnline(c)"
                             style="position:absolute;right:-1px;bottom:-1px;width:10px;height:10px;border-radius:50%;background:#1890ff;border:2px solid #fff"
@@ -113,12 +113,12 @@
                                   >{{ lastMessagePreviewTag(c) }}</el-tag>
                                   <span v-if="lastMessagePreviewSuffix(c)" class="chat-preview-suffix">{{ lastMessagePreviewSuffix(c) }}</span>
                                 </template>
-                                <template v-else>
+                                <template v-if="!lastMessagePreviewTag(c)">
                                   <span class="chat-preview-suffix">{{ formatLastMessage(c) }}</span>
                                 </template>
                               </span>
                             </template>
-                            <template v-else>
+                            <template v-if="!isGroupChatItem(c)">
                               <template v-if="lastMessagePreviewTag(c)">
                                 <span class="chat-preview">
                                   <el-tag
@@ -130,7 +130,7 @@
                                   <span v-if="lastMessagePreviewSuffix(c)" class="chat-preview-suffix">{{ lastMessagePreviewSuffix(c) }}</span>
                                 </span>
                               </template>
-                              <template v-else>
+                              <template v-if="!lastMessagePreviewTag(c)">
                                 {{ formatLastMessage(c) }}
                               </template>
                             </template>
@@ -207,7 +207,7 @@
                         <el-tag type="info" effect="plain" size="small">{{ messagePreviewTag(repliedRefMessage(m)) }}</el-tag>
                         <span v-if="messagePreviewSuffix(repliedRefMessage(m))"> {{ messagePreviewSuffix(repliedRefMessage(m)) }}</span>
                       </template>
-                      <template v-else>
+                      <template v-if="!messagePreviewTag(repliedRefMessage(m))">
                         {{ messagePreviewText(repliedRefMessage(m)) || '已回复' }}
                       </template>
                     </span>
@@ -217,33 +217,46 @@
                     <span v-if="isOwnMessage(m)" class="msg-time">{{ formatTime(m) }}</span>
                     <div @contextmenu.prevent="onMessageContextMenu($event, m)"
                          :style="{ padding:'8px 10px', borderRadius:'12px', border:'1px solid #eee', background: bubbleBackground(m), width:'fit-content', maxWidth:'100%' }">
-                      <template v-if="isRecalledMessage(m)">
+                      <template v-if="messageRenderType(m)==='recalled'">
                         <el-tag type="info" effect="plain" size="small">{{ recallNoticeText(m) }}</el-tag>
                       </template>
-                      <template v-else-if="m.type==='emoji' && m.content && m.content.url">
+                      <template v-if="messageRenderType(m)==='emoji'">
                         <img :src="m.content.url" alt="emoji" style="max-height:96px;display:inline-block;vertical-align:middle;cursor:pointer" @click.stop="openImagePreview(m.content.url)" />
                       </template>
-                      <template v-else-if="m.type==='file' && m.content && isImageFile(m)">
+                      <template v-if="messageRenderType(m)==='file_image'">
                         <img :src="fileDisplayUrl(m)" :alt="m.content.filename || 'image'" style="max-width:320px;max-height:240px;display:block;border-radius:8px;cursor:pointer" @click.stop="openImagePreview(fileOriginalUrl(m))" />
                         <div v-if="m.content.filename" style="margin-top:6px;font-size:12px;color:#666">{{ messageFilename(m) }}</div>
                       </template>
-                      <template v-else-if="m.type==='file' && m.content && isVideoFile(m)">
+                      <template v-if="messageRenderType(m)==='file_video'">
                         <video :src="fileDisplayUrl(m)" controls style="max-width:320px;max-height:240px;display:block;border-radius:8px" :poster="m.content.thumbnailUrl || ''"></video>
                         <div v-if="m.content.filename" style="margin-top:6px;font-size:12px;color:#666">{{ messageFilename(m) }}</div>
                       </template>
-                      <template v-else-if="m.type==='file' && m.content && m.content.url">
+                      <template v-if="messageRenderType(m)==='file'">
                         <a :href="m.content.url" target="_blank" rel="noopener" style="color:#0366d6;text-decoration:none">
                           {{ messageFilename(m) || '下载文件' }}
                         </a>
                       </template>
-                      <template v-else>
+                      <template v-if="messageRenderType(m)==='player_card'">
+                        <div style="display:flex;gap:10px;align-items:center;min-width:200px">
+                          <el-avatar shape="square" :src="m.content.faceUrl || ''" :size="44" style="flex:0 0 auto">{{ (m.content.name||'?').slice(0,1).toUpperCase() }}</el-avatar>
+                          <div style="min-width:0;flex:1">
+                            <div style="font-weight:600;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ m.content.name || '未知玩家' }}</div>
+                            <div style="font-size:12px;color:#888;line-height:1.5">
+                              <span>等级：{{ (m.content.level ?? '-') }}</span>
+                              <span style="margin-left:10px">UID：{{ m.content.uid || '-' }}</span>
+                            </div>
+                            <div v-if="m.content.minecraftUuid" style="font-size:12px;color:#999;line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ m.content.minecraftUuid }}</div>
+                          </div>
+                        </div>
+                      </template>
+                      <template v-if="messageRenderType(m)==='text'">
                         <span v-if="m.type==='text'" style="white-space:pre-wrap;word-break:break-word">
                           <template v-for="(p, i) in messageTextParts(m)" :key="i">
                             <el-tag v-if="p.t==='mention'" type="info" effect="plain" size="small" style="margin:0 2px">{{ p.v }}</el-tag>
-                            <span v-else>{{ p.v }}</span>
+                            <span v-if="p.t!=='mention'">{{ p.v }}</span>
                           </template>
                         </span>
-                        <span v-else style="white-space:pre-wrap;word-break:break-word">{{ messageTextPreview(m) }}</span>
+                        <span v-if="m.type!=='text'" style="white-space:pre-wrap;word-break:break-word">{{ messageTextPreview(m) }}</span>
                       </template>
                     </div>
                     <span v-if="!isOwnMessage(m)" class="msg-time">{{ formatTime(m) }}</span>
@@ -287,6 +300,9 @@
                 <el-button type="default" @click.stop="toggleEmojiPanel" circle>
                   <el-icon><magic-stick /></el-icon>
                 </el-button>
+                <el-button type="default" @click.stop="toggleActionsPanel" circle title="更多">
+                  <el-icon><plus /></el-icon>
+                </el-button>
               </div>
 
               <div
@@ -328,7 +344,7 @@
                             <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
                               <span style="font-weight:500">{{ userLabel(mid) }}</span>
                               <el-tag v-if="String(mid)===String(groupOwnerId)" type="info" effect="plain" size="small">群主</el-tag>
-                              <el-tag v-else-if="groupAdmins.includes(String(mid))" type="info" effect="plain" size="small">管理员</el-tag>
+                              <el-tag v-if="String(mid)!==String(groupOwnerId) && groupAdmins.includes(String(mid))" type="info" effect="plain" size="small">管理员</el-tag>
                             </div>
                             <div style="font-size:12px;color:#888">{{ userMinecraftId(mid) || '未绑定minecraft uuid' }}</div>
                           </div>
@@ -355,7 +371,7 @@
                 <div v-if="readersLoading" style="padding:8px 0">
                   <el-skeleton animated :rows="4" />
                 </div>
-                <div v-else style="display:flex;flex-direction:column;gap:8px;max-height:360px;overflow:auto">
+                <div v-if="!readersLoading" style="display:flex;flex-direction:column;gap:8px;max-height:360px;overflow:auto">
                   <div v-if="!readersList || readersList.length===0" style="font-size:12px;color:#999">暂无已读用户</div>
                   <div v-for="u in readersList" :key="u.id" style="display:flex;align-items:center;gap:10px;padding:6px 4px;border-bottom:1px solid #f3f3f3">
                     <el-avatar :size="32" shape="square" :src="u.faceUrl" style="flex-shrink:0">{{ (u.name||'?').slice(0,1) }}</el-avatar>
@@ -378,13 +394,47 @@
                   </button>
                 </div>
               </div>
+
+              <div v-if="actionsPanelVisible" @click.stop style="position:absolute;left:0;bottom:46px;width:220px;overflow:hidden;background:#fff;border:1px solid #ddd;box-shadow:0 4px 12px rgba(0,0,0,0.08);border-radius:8px">
+                <div style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-weight:600">更多功能</div>
+                <div style="display:flex;flex-direction:column">
+                  <button @click="openPlayerCardPicker" style="text-align:left;border:none;background:transparent;padding:10px 12px;cursor:pointer">
+                    玩家名片
+                  </button>
+                </div>
+              </div>
+
+              <el-dialog v-model="playerCardDialogVisible" title="选择玩家" width="520px" :close-on-click-modal="true" @close="closePlayerCardPicker">
+                <div style="display:flex;flex-direction:column;gap:10px">
+                  <el-input v-model="playerCardQuery" placeholder="搜索玩家（用户名/ID）" clearable />
+                  <el-skeleton v-if="playerCardLoading" animated :rows="6" />
+                  <div v-if="!playerCardLoading" style="max-height:420px;overflow:auto;border:1px solid #eee;border-radius:8px;background:#fff">
+                    <div
+                      v-for="u in playerCardFiltered"
+                      :key="u.id"
+                      @click="sendPlayerCard(u)"
+                      style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 10px;border-bottom:1px solid #f3f3f3;cursor:pointer"
+                    >
+                      <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
+                        <el-avatar :size="34" shape="square" :src="u.faceUrl || ''" style="flex:0 0 auto">{{ (u.username||u.id||'?').slice(0,1).toUpperCase() }}</el-avatar>
+                        <div style="min-width:0;flex:1">
+                          <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ u.username || u.id }}</div>
+                          <div style="font-size:12px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ u.id }}</div>
+                        </div>
+                      </div>
+                      <el-button size="small" type="primary" plain @click.stop="sendPlayerCard(u)">发送</el-button>
+                    </div>
+                    <div v-if="!playerCardFiltered || playerCardFiltered.length===0" style="padding:12px;font-size:12px;color:#999">没有匹配的玩家</div>
+                  </div>
+                </div>
+              </el-dialog>
             </div>
 
             <el-dialog v-model="groupManageVisible" title="群聊管理" width="520px">
               <div v-if="groupManageLoading" style="padding:16px">
                 <el-skeleton animated :rows="4" />
               </div>
-              <div v-else>
+              <div v-if="!groupManageLoading">
                 <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
                   <el-input v-model="groupEditName" placeholder="群聊名称" style="flex:1;min-width:220px"></el-input>
                   <el-button type="primary" :loading="groupActionLoading" :disabled="!groupCanManage" @click="saveGroupName">保存名称</el-button>
@@ -396,7 +446,7 @@
                   <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
                     <div style="display:flex;align-items:center;gap:8px">
                       <el-avatar v-if="currentChatFaceUrl" shape="square" :src="currentChatFaceUrl" :size="36"></el-avatar>
-                      <el-avatar v-else shape="square" :size="36">群</el-avatar>
+                      <el-avatar v-if="!currentChatFaceUrl" shape="square" :size="36">群</el-avatar>
                       <div style="font-size:12px;color:#888">群头像</div>
                     </div>
                     <el-button type="primary" plain :loading="groupActionLoading" @click="openGroupAvatarPicker">设置群头像</el-button>
@@ -421,7 +471,7 @@
                         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
                           <span style="font-weight:500">{{ userLabel(mid) }}</span>
                           <el-tag v-if="String(mid)===String(groupOwnerId)" type="info" effect="plain" size="small">群主</el-tag>
-                          <el-tag v-else-if="groupAdmins.includes(String(mid))" type="info" effect="plain" size="small">管理员</el-tag>
+                          <el-tag v-if="String(mid)!==String(groupOwnerId) && groupAdmins.includes(String(mid))" type="info" effect="plain" size="small">管理员</el-tag>
                         </div>
                         <div style="font-size:12px;color:#888">{{ userMinecraftId(mid) || '未绑定minecraft uuid' }}</div>
                       </div>

@@ -513,6 +513,32 @@ const app = createApp({
 
     const emojiPanelVisible = ref(false);
     const emojiPacks = ref([]);
+
+    const actionsPanelVisible = ref(false);
+    const playerCardDialogVisible = ref(false);
+    const playerCardLoading = ref(false);
+    const playerCardSending = ref(false);
+    const playerCardQuery = ref('');
+
+    const playerCardFiltered = ref([]);
+    try {
+      watch([playerCardQuery, allUsersList], () => {
+        const s = String(playerCardQuery.value || '').trim().toLowerCase();
+        const list = Array.isArray(allUsersList.value) ? allUsersList.value : [];
+        if (!s) {
+          playerCardFiltered.value = list.slice(0, 300);
+          return;
+        }
+        playerCardFiltered.value = list
+          .filter((u) => {
+            const hay = String((u && (u.username || u.id)) || '').toLowerCase();
+            const id = String((u && u.id) || '').toLowerCase();
+            const mc = String((u && (u.mcUuid || u.minecraftUuid || u.minecraft_uuid || u.minecraftUUID || u.minecraft_id || u.minecraftId || u.mc_uuid || u.uuid)) || '').toLowerCase();
+            return hay.includes(s) || id.includes(s) || mc.includes(s);
+          })
+          .slice(0, 300);
+      }, { immediate: true });
+    } catch (e) {}
     const longPressTimer = ref(null);
     const longPressTarget = ref(null);
     const ctxMenuVisible = ref(false);
@@ -908,6 +934,7 @@ const app = createApp({
         if (isGlobalChat.value || !isGroupChat.value) return;
         try { ensureGroupMembersLoaded(); } catch (e0) {}
         try { emojiPanelVisible.value = false; } catch (e2) {}
+        try { actionsPanelVisible.value = false; } catch (e3) {}
         mentionQuery.value = '';
         mentionSelectAll.value = false;
         mentionSelectIds.value = [];
@@ -1472,7 +1499,12 @@ const app = createApp({
         if (!Array.isArray(list)) return;
         allUsersList.value = list
           .filter((u) => u && typeof u === 'object' && (u.id !== undefined && u.id !== null))
-          .map((u) => ({ id: String(u.id), username: u.username || u.displayName || u.name || String(u.id) }));
+          .map((u) => ({
+            id: String(u.id),
+            username: u.username || u.displayName || u.name || String(u.id),
+            faceUrl: u.faceUrl || u.face_url || u.face || u.face_key || '',
+            mcUuid: u.minecraftUuid || u.minecraft_uuid || u.minecraftUUID || u.minecraft_id || u.minecraftId || u.mcUuid || u.mc_uuid || u.uuid || '',
+          }));
       } catch (e) {}
     }
 
@@ -3259,6 +3291,9 @@ const app = createApp({
       chatLoading.value = true;
       currentChatId.value = id;
       currentChatMeta.value = null;
+      try { emojiPanelVisible.value = false; } catch (e0) {}
+      try { actionsPanelVisible.value = false; } catch (e1) {}
+      try { playerCardDialogVisible.value = false; } catch (e2) {}
       const isGlobal = id === 'global';
 
       loadingMore.value = false;
@@ -3625,7 +3660,98 @@ const app = createApp({
     }
 
     function toggleEmojiPanel() {
+      if (isGlobalChat.value) return;
+      actionsPanelVisible.value = false;
       emojiPanelVisible.value = !emojiPanelVisible.value;
+      if (emojiPanelVisible.value) {
+        try { loadEmojiPacks(); } catch (e) {}
+      }
+    }
+
+    function toggleActionsPanel() {
+      if (isGlobalChat.value) return;
+      emojiPanelVisible.value = false;
+      actionsPanelVisible.value = !actionsPanelVisible.value;
+    }
+
+    async function openPlayerCardPicker() {
+      if (isGlobalChat.value) return;
+      actionsPanelVisible.value = false;
+      playerCardDialogVisible.value = true;
+      playerCardQuery.value = '';
+
+      if (playerCardLoading.value) return;
+      if (Array.isArray(allUsersList.value) && allUsersList.value.length > 0) return;
+
+      playerCardLoading.value = true;
+      try {
+        await loadAllUsersList();
+      } finally {
+        playerCardLoading.value = false;
+      }
+    }
+
+    function closePlayerCardPicker() {
+      playerCardDialogVisible.value = false;
+      playerCardSending.value = false;
+    }
+
+    async function sendPlayerCard(u) {
+      if (playerCardSending.value) return;
+      if (!currentChatId.value) return ElementPlus.ElMessage.warning('先选择会话');
+      if (isGlobalChat.value) return ElementPlus.ElMessage.warning('全服聊天不支持玩家名片');
+
+      const targetId = u && (u.id !== undefined && u.id !== null) ? String(u.id) : '';
+      if (!targetId) return ElementPlus.ElMessage.warning('缺少玩家 ID');
+
+      const tempId = `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const optimisticMsg = {
+        id: tempId,
+        type: 'player_card',
+        content: {
+          faceUrl: (u && (u.faceUrl || u.face_url || u.face || u.face_key)) || '',
+          name: (u && (u.username || u.displayName || u.name)) || targetId,
+          uid: targetId,
+          minecraftUuid: (u && (u.mcUuid || u.minecraftUuid || u.minecraft_id || u.minecraftId || u.minecraft_uuid)) || null,
+          level: null,
+        },
+        from_user: selfUserId.value || '__me__',
+        created_at: new Date().toISOString(),
+        __own: true,
+        __status: 'sending',
+      };
+
+      try {
+        if (!isSelfChat.value) {
+          if (isGroupChat.value) optimisticMsg.readCount = 0;
+          else if (isDirectChat.value) optimisticMsg.read = false;
+        }
+      } catch (e) {}
+
+      msgById[tempId] = optimisticMsg;
+      messages.value.push(optimisticMsg);
+      playerCardDialogVisible.value = false;
+      await nextTick();
+      try { scrollMessagesToBottom(); } catch (e0) {}
+
+      playerCardSending.value = true;
+      try {
+        const res = await safeFetch(`${apiHttpBase()}/chats/${encodeURIComponent(currentChatId.value)}/player-card`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: targetId }),
+        });
+        if (!res.ok) throw new Error('发送失败');
+        const serverMsg = await res.json().catch(() => null);
+        ackOptimisticMessage(tempId, serverMsg, false);
+      } catch (e) {
+        optimisticMsg.__status = 'failed';
+        try { ElementPlus.ElMessage.error('发送玩家名片失败'); } catch (e2) {}
+      } finally {
+        playerCardSending.value = false;
+        await nextTick();
+        try { scrollMessagesToBottom(); } catch (e1) {}
+      }
     }
 
     async function loadEmojiPacks() {
@@ -3743,6 +3869,15 @@ const app = createApp({
       replyPreview,
       emojiPanelVisible,
       emojiPacks,
+      actionsPanelVisible,
+      toggleActionsPanel,
+      openPlayerCardPicker,
+      playerCardDialogVisible,
+      playerCardLoading,
+      playerCardQuery,
+      playerCardFiltered,
+      sendPlayerCard,
+      closePlayerCardPicker,
       // group management
       isGroupChat,
       isDirectChat,

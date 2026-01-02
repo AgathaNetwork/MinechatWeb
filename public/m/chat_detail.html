@@ -126,6 +126,20 @@
                   {{ messageFilename(m) || '下载文件' }}
                 </a>
               </template>
+              <template v-else-if="m.type==='player_card' && m.content">
+                <div style="display:flex;gap:10px;align-items:center;min-width:200px">
+                  <el-avatar shape="square" :src="m.content.faceUrl || ''" :size="42" style="flex:0 0 auto">{{ (m.content.name||'?').slice(0,1).toUpperCase() }}</el-avatar>
+                  <div style="min-width:0;flex:1">
+                    <div style="font-weight:600;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ m.content.name || '未知玩家' }}</div>
+                    <div style="font-size:12px;color:#888;line-height:1.5">
+                      <span v-if="m.content.level!==null && m.content.level!==undefined">等级：{{ m.content.level }}</span>
+                      <span v-else>等级：-</span>
+                      <span style="margin-left:10px">UID：{{ m.content.uid || '-' }}</span>
+                    </div>
+                    <div v-if="m.content.minecraftUuid" style="font-size:12px;color:#999;line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ m.content.minecraftUuid }}</div>
+                  </div>
+                </div>
+              </template>
               <template v-else>
                 <span v-if="m.type==='text'" style="white-space:pre-wrap;word-break:break-word">
                   <template v-for="(p, i) in messageTextParts(m)" :key="i">
@@ -181,6 +195,9 @@
             </el-button>
             <el-button @click="toggleEmojiPanel" circle style="flex-shrink:0">
               <el-icon><magic-stick /></el-icon>
+            </el-button>
+            <el-button @click="toggleActionsPanel" circle style="flex-shrink:0" title="更多">
+              <el-icon><plus /></el-icon>
             </el-button>
           </div>
           <div
@@ -273,6 +290,40 @@
             </button>
           </div>
         </div>
+
+        <div v-if="actionsPanelVisible" style="overflow:hidden;background:#fff;border:1px solid #ddd;border-radius:6px;margin-top:8px">
+          <div style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-weight:600">更多功能</div>
+          <div style="display:flex;flex-direction:column">
+            <button @click="openPlayerCardPicker" style="text-align:left;border:none;background:transparent;padding:10px 12px;cursor:pointer">
+              玩家名片
+            </button>
+          </div>
+        </div>
+
+        <el-dialog v-model="playerCardDialogVisible" title="选择玩家" width="92%" top="10vh" :close-on-click-modal="true" @close="closePlayerCardPicker">
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <el-input v-model="playerCardQuery" placeholder="搜索玩家（用户名/ID）" clearable />
+            <el-skeleton v-if="playerCardLoading" animated :rows="6" />
+            <div v-else style="max-height:420px;overflow:auto;border:1px solid #eee;border-radius:8px;background:#fff">
+              <div
+                v-for="u in playerCardFiltered"
+                :key="u.id"
+                @click="sendPlayerCard(u)"
+                style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 10px;border-bottom:1px solid #f3f3f3;cursor:pointer"
+              >
+                <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
+                  <el-avatar :size="34" shape="square" :src="u.faceUrl || ''" style="flex:0 0 auto">{{ (u.username||u.id||'?').slice(0,1).toUpperCase() }}</el-avatar>
+                  <div style="min-width:0;flex:1">
+                    <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ u.username || u.id }}</div>
+                    <div style="font-size:12px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ u.id }}</div>
+                  </div>
+                </div>
+                <el-button size="small" type="primary" plain @click.stop="sendPlayerCard(u)">发送</el-button>
+              </div>
+              <div v-if="!playerCardFiltered || playerCardFiltered.length===0" style="padding:12px;font-size:12px;color:#999">没有匹配的玩家</div>
+            </div>
+          </div>
+        </el-dialog>
       </div>
 
       <el-drawer v-model="groupManageVisible" title="群聊管理" direction="btt" size="70%" class="group-manage-drawer">
