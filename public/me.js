@@ -43,6 +43,42 @@ const app = createApp({
     const historyList = ref([]);
     const historyError = ref('');
 
+    // Game services: Home query
+    const homeDialogVisible = ref(false);
+    const homeLoading = ref(false);
+    const homeError = ref('');
+    const homeNameQuery = ref('');
+    const homeWorldFilter = ref(''); // '', 'world', 'world_nether', 'world_the_end'
+    const homesList = ref([]); // [{ name, worldKey, worldLabel, x, y, z, yaw, pitch }]
+
+    function isVanillaWorldKey(v) {
+      const s = String(v || '').trim();
+      return s === 'world' || s === 'world_nether' || s === 'world_the_end';
+    }
+
+    function worldLabelFromKey(k) {
+      const key = String(k || '').trim();
+      if (key === 'world') return '主世界';
+      if (key === 'world_nether') return '下界';
+      if (key === 'world_the_end') return '末地';
+      return key || '-';
+    }
+
+    const filteredHomes = computed(() => {
+      try {
+        const nameQ = String(homeNameQuery.value || '').trim().toLowerCase();
+        const worldQ = String(homeWorldFilter.value || '').trim();
+        const list = Array.isArray(homesList.value) ? homesList.value : [];
+        return list.filter((h) => {
+          const nameOk = !nameQ || String(h.name || '').toLowerCase().includes(nameQ);
+          const worldOk = !worldQ || String(h.worldKey || '') === worldQ;
+          return nameOk && worldOk;
+        });
+      } catch (e) {
+        return homesList.value || [];
+      }
+    });
+
     const isLoggedIn = computed(() => !!tokenValue() || !!sessionOk.value);
 
     const selfDisplayName = computed(() => {
@@ -491,6 +527,84 @@ const app = createApp({
       }
     }
 
+    function normalizeWorldKeyFromHome(homeObj) {
+      try {
+        if (!homeObj || typeof homeObj !== 'object') return '';
+        const wn = homeObj['world-name'] || homeObj.world_name || homeObj.worldName || '';
+        if (isVanillaWorldKey(wn)) return String(wn).trim();
+        const w = homeObj.world || '';
+        if (isVanillaWorldKey(w)) return String(w).trim();
+        // If neither matches vanilla keys, prefer world-name (human readable) then fallback to world.
+        const s1 = String(wn || '').trim();
+        if (s1) return s1;
+        return String(w || '').trim();
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function parseHomesFromPlayerData(data) {
+      try {
+        const homesRoot = data && typeof data === 'object' ? data.homes : null;
+        const homesObj = homesRoot && typeof homesRoot === 'object' ? homesRoot.homes : null;
+        if (!homesObj || typeof homesObj !== 'object') return [];
+
+        const entries = Object.entries(homesObj).filter(([k, v]) => k && v && typeof v === 'object');
+        return entries
+          .map(([name, h]) => {
+            const worldKey = normalizeWorldKeyFromHome(h);
+            const x = h.x;
+            const y = h.y;
+            const z = h.z;
+
+            const xNum = Number(x);
+            const yNum = Number(y);
+            const zNum = Number(z);
+            return {
+              name: String(name),
+              worldKey: worldKey || '',
+              worldLabel: worldLabelFromKey(worldKey),
+              x: Number.isFinite(xNum) ? String(Math.round(xNum)) : x === undefined || x === null ? '' : String(x),
+              y: Number.isFinite(yNum) ? String(Math.round(yNum)) : y === undefined || y === null ? '' : String(y),
+              z: Number.isFinite(zNum) ? String(Math.round(zNum)) : z === undefined || z === null ? '' : String(z),
+            };
+          })
+          .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function openHomeDialog() {
+      homeDialogVisible.value = true;
+      homeError.value = '';
+      homeNameQuery.value = '';
+      homeWorldFilter.value = '';
+      homesList.value = [];
+      if (isLoggedIn.value) runHomeQuery();
+      else ElementPlus.ElMessage.warning('请先登录');
+    }
+
+    async function runHomeQuery() {
+      if (homeLoading.value) return;
+      homeLoading.value = true;
+      homeError.value = '';
+      homesList.value = [];
+      try {
+        const res = await safeFetch(`${apiBase.value}/info/getPlayerData`);
+        if (!res.ok) {
+          const txt = await res.text().catch(() => '');
+          throw new Error(txt || `HTTP ${res.status}`);
+        }
+        const data = await res.json().catch(() => null);
+        homesList.value = parseHomesFromPlayerData(data);
+      } catch (e) {
+        homeError.value = e && e.message ? e.message : String(e);
+      } finally {
+        homeLoading.value = false;
+      }
+    }
+
     function onNav(key) {
       if (key === 'chat') window.location.href = '/chat.html';
       else if (key === 'players') window.location.href = '/players.html';
@@ -556,6 +670,14 @@ const app = createApp({
       historyList,
       historyError,
 
+      // game services
+      homeDialogVisible,
+      homeLoading,
+      homeError,
+      homeNameQuery,
+      homeWorldFilter,
+      filteredHomes,
+
       // actions
       onNav,
       gotoLogin,
@@ -568,6 +690,9 @@ const app = createApp({
       runIdQuery,
       openHistoryDialog,
       runHistoryQuery,
+
+      openHomeDialog,
+      runHomeQuery,
     };
   },
 });

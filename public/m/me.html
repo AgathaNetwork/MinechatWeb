@@ -11,6 +11,7 @@
       html,body{height:100%;overflow:hidden;overscroll-behavior:none;-webkit-text-size-adjust:100%}
       body{margin:0;padding:0;background:#f5f5f5}
       input,textarea,.el-input__inner,.el-textarea__inner{font-size:16px !important}
+      .el-select .el-select__selected-item,.el-select .el-select__placeholder{font-size:16px !important}
       .top-bar{position:fixed;top:0;left:0;right:0;height:50px;background:#fff;border-bottom:1px solid #e6e6e6;display:flex;align-items:center;justify-content:space-between;padding:0 12px;z-index:100}
       .content-area{position:fixed;top:50px;left:0;right:0;bottom:56px;overflow:auto;padding:12px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
       .bottom-nav{position:fixed;bottom:0;left:0;right:0;height:56px;background:#fff;border-top:1px solid #e6e6e6;display:flex;justify-content:space-around;align-items:center;z-index:100}
@@ -101,6 +102,20 @@
             </div>
           </div>
         </el-card>
+
+        <el-card style="margin-top:12px">
+          <template #header>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-weight:600">游戏服务</span>
+            </div>
+          </template>
+
+          <div style="padding:12px">
+            <div class="action-row">
+              <el-button plain @click="openHomeDialog">Home查询</el-button>
+            </div>
+          </div>
+        </el-card>
       </div>
 
       <div class="bottom-nav">
@@ -134,7 +149,6 @@
         </el-dialog>
 
         <el-dialog v-model="historyDialogVisible" title="登录记录查询" width="92%" top="10vh">
-          <el-alert v-if="!isLoggedIn" type="warning" :closable="false" show-icon title="需要登录后才能查询"></el-alert>
           <div style="margin-top:12px;font-size:12px;color:#888" v-if="historyLoading">加载中…</div>
           <div style="margin-top:6px;font-size:12px;color:#888" v-else-if="historyList && historyList.length">共 {{ historyList.length }} 条，最多显示10条</div>
           <div style="margin-top:12px" v-if="historyError">
@@ -147,6 +161,40 @@
               <el-table-column prop="ip" label="IP" min-width="110"></el-table-column>
             </el-table>
           </div>
+        </el-dialog>
+
+        <el-dialog v-model="homeDialogVisible" title="Home查询" width="92%" top="10vh">
+          <el-alert v-if="!isLoggedIn" type="warning" :closable="false" show-icon title="需要登录后才能查询"></el-alert>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px">
+            <el-input v-model="homeNameQuery" placeholder="按 Home名 模糊搜索" style="width:260px" clearable></el-input>
+            <el-select v-model="homeWorldFilter" placeholder="选择世界" clearable style="width:160px">
+              <el-option label="主世界" value="world"></el-option>
+              <el-option label="下界" value="world_nether"></el-option>
+              <el-option label="末地" value="world_the_end"></el-option>
+            </el-select>
+          </div>
+          <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+            <el-button plain :loading="homeLoading" :disabled="!isLoggedIn || homeLoading" @click="runHomeQuery">刷新</el-button>
+            <span style="font-size:12px;color:#888" v-if="homeLoading">加载中…</span>
+            <span style="font-size:12px;color:#888" v-else-if="filteredHomes && filteredHomes.length">共 {{ filteredHomes.length }} 条</span>
+          </div>
+
+          <div style="margin-top:12px" v-if="homeError">
+            <el-alert type="error" :closable="false" show-icon title="查询失败"></el-alert>
+            <div style="margin-top:8px;font-size:12px;color:#666;word-break:break-all">{{ homeError }}</div>
+          </div>
+
+          <div style="margin-top:12px" v-if="filteredHomes && filteredHomes.length">
+            <el-table :data="filteredHomes" size="small" style="width:100%">
+              <el-table-column prop="name" label="Home" min-width="120"></el-table-column>
+              <el-table-column prop="worldLabel" label="世界" min-width="120"></el-table-column>
+              <el-table-column prop="x" label="X" width="80"></el-table-column>
+              <el-table-column prop="y" label="Y" width="70"></el-table-column>
+              <el-table-column prop="z" label="Z" width="80"></el-table-column>
+            </el-table>
+          </div>
+
+          <div style="margin-top:12px;font-size:12px;color:#888" v-else-if="!homeLoading && isLoggedIn">暂无 home 数据</div>
         </el-dialog>
     </div>
 
