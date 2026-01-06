@@ -291,7 +291,7 @@
 
             <div style="margin-top:10px;display:flex;gap:8px;align-items:center;position:relative;flex-shrink:0">
               <input ref="fileInputEl" type="file" accept="image/*,video/*" style="display:none" @change="onFileSelected" />
-              <div v-if="!isGlobalChat" style="display:flex;gap:2px;align-items:center;flex-shrink:0">
+              <div v-if="!isGlobalChat" style="display:flex;gap:1px;align-items:center;flex-shrink:0">
                 <el-button type="default" @click.stop="toggleMorePanel" circle>
                   <span style="font-size:18px;line-height:1">+</span>
                 </el-button>
@@ -410,15 +410,19 @@
                 @close="cancelPlayerCardDialog"
               >
                 <div style="display:flex;flex-direction:column;gap:10px">
-                  <div style="font-size:12px;color:#888">选择 1 位玩家后发送到当前会话</div>
                   <el-select
                     v-model="playerCardSelectedUserId"
                     filterable
-                    placeholder="请选择玩家"
+                    remote
+                    :remote-method="onPlayerCardQuery"
+                    :no-data-text="playerCardNoDataText()"
+                    placeholder="输入关键词搜索玩家"
                     style="width:100%"
                     :loading="playerCardUsersLoading"
                   >
-                    <el-option v-for="u in allUsersList" :key="u.id" :label="u.username" :value="u.id" />
+                    <el-option v-for="u in playerCardOptions" :key="u.id" :label="u.username" :value="u.id">
+                      <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ u.username }}</div>
+                    </el-option>
                   </el-select>
                 </div>
 

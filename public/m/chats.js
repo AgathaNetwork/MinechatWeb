@@ -775,6 +775,12 @@ const app = createApp({
           return { tag, suffix: fn };
         }
 
+        if (t === 'player_card') {
+          const name =
+            (m.content && typeof m.content === 'object' && (m.content.name || m.content.username || m.content.displayName)) || '';
+          return { tag: '名片', suffix: name ? String(name) : '' };
+        }
+
         return { tag: '', suffix: '' };
       } catch (e) {
         return { tag: '', suffix: '' };

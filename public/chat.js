@@ -117,6 +117,45 @@ const app = createApp({
     const playerCardUsersLoading = ref(false);
     const playerCardSending = ref(false);
     const playerCardSelectedUserId = ref('');
+    const playerCardQuery = ref('');
+
+    function playerCardNoDataText() {
+      const q = String(playerCardQuery.value || '').trim();
+      return q ? '没有匹配的玩家（最多显示 5 条）' : '请输入关键词搜索（最多显示 5 条）';
+    }
+
+    function fuzzyUserMatch(u, query) {
+      try {
+        const q = String(query || '').trim().toLowerCase();
+        if (!q) return false;
+        const tokens = q.split(/\s+/).filter(Boolean);
+        if (tokens.length === 0) return false;
+
+        // 按需求：仅对 username 做模糊匹配
+        const name = String((u && u.username) || '').toLowerCase();
+        return tokens.every((t) => name.includes(t));
+      } catch (e) {
+        return false;
+      }
+    }
+
+    const playerCardOptions = computed(() => {
+      try {
+        const q = String(playerCardQuery.value || '').trim();
+        if (!q) return [];
+        const list = Array.isArray(allUsersList.value) ? allUsersList.value : [];
+        const matched = list.filter((u) => fuzzyUserMatch(u, q));
+        return matched.slice(0, 5);
+      } catch (e) {
+        return [];
+      }
+    });
+
+    function onPlayerCardQuery(q) {
+      playerCardQuery.value = String(q || '');
+      // Changing query should not keep an old selection by accident.
+      if (playerCardSelectedUserId.value) playerCardSelectedUserId.value = '';
+    }
 
     const msgInput = ref('');
     const msgInputEl = ref(null);
@@ -2717,11 +2756,17 @@ const app = createApp({
         if (!res.ok) return;
         const list = await res.json().catch(() => null);
         if (!Array.isArray(list)) return;
+
         allUsersList.value = list
           .filter((u) => u && typeof u === 'object' && (u.id !== undefined && u.id !== null))
           .map((u) => ({
             id: String(u.id),
             username: u.username || u.displayName || u.name || String(u.id),
+            // 对齐 /users 返回值字段
+            minecraftUuid: (u.minecraftUuid || u.minecraft_uuid || u.minecraft_id || u.uuid || '') ? String(u.minecraftUuid || u.minecraft_uuid || u.minecraft_id || u.uuid) : '',
+            faceUrl: normalizeAssetUrl(u.faceUrl || u.face_url || u.face || u.face_key || ''),
+            // 兼容旧字段名（仅用于前端展示，不影响后端）
+            mcUuid: (u.minecraftUuid || u.minecraft_uuid || u.minecraft_id || u.uuid || '') ? String(u.minecraftUuid || u.minecraft_uuid || u.minecraft_id || u.uuid) : '',
           }));
       } catch (e) {}
     }
@@ -4454,6 +4499,7 @@ const app = createApp({
         morePanelVisible.value = false;
         playerCardDialogVisible.value = true;
         playerCardSelectedUserId.value = '';
+        playerCardQuery.value = '';
         await ensureAllUsersLoadedForPlayerCard();
       } catch (e) {}
     }
@@ -4461,6 +4507,7 @@ const app = createApp({
     function cancelPlayerCardDialog() {
       playerCardDialogVisible.value = false;
       playerCardSelectedUserId.value = '';
+      playerCardQuery.value = '';
     }
 
     async function confirmSendPlayerCard() {
@@ -4769,6 +4816,9 @@ const app = createApp({
       playerCardUsersLoading,
       playerCardSending,
       playerCardSelectedUserId,
+      playerCardQuery,
+      playerCardOptions,
+      playerCardNoDataText,
       fileInputEl,
       messagesEl,
       isGlobalChat,
@@ -4883,6 +4933,7 @@ const app = createApp({
       openPlayerCardDialog,
       cancelPlayerCardDialog,
       confirmSendPlayerCard,
+      onPlayerCardQuery,
       openFilePicker,
       onFileSelected,
       goEmojiManage,

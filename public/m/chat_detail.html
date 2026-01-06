@@ -114,6 +114,17 @@
               <template v-else-if="m.type==='emoji' && m.content && m.content.url">
                 <img :src="m.content.url" alt="emoji" style="max-height:96px;display:block;cursor:pointer" @click.stop="openImagePreview(m.content.url)" />
               </template>
+              <template v-else-if="m.type==='player_card' && m.content">
+                <div style="display:flex;gap:10px;align-items:center;min-width:200px;max-width:260px">
+                  <el-avatar shape="square" :size="44" :src="m.content.faceUrl" style="flex-shrink:0">{{ (m.content.name||'?').slice(0,1) }}</el-avatar>
+                  <div style="min-width:0;flex:1">
+                    <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ m.content.name || '未知玩家' }}</div>
+                    <div style="font-size:12px;color:#666;margin-top:2px">等级：{{ (m.content.level===null || m.content.level===undefined || m.content.level==='') ? '-' : m.content.level }}</div>
+                    <div style="font-size:12px;color:#888;margin-top:2px">UID：{{ m.content.uid || '-' }}</div>
+                    <div v-if="m.content.minecraftUuid" style="font-size:12px;color:#888;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">MC：{{ m.content.minecraftUuid }}</div>
+                  </div>
+                </div>
+              </template>
               <template v-else-if="m.type==='file' && m.content && isImageFile(m)">
                 <img :src="fileDisplayUrl(m)" :alt="m.content.filename || 'image'" style="max-width:100%;max-height:200px;display:block;border-radius:6px;cursor:pointer" @click.stop="openImagePreview(fileOriginalUrl(m))" />
               </template>
@@ -175,7 +186,10 @@
         </div>
         <div style="display:flex;gap:8px;align-items:flex-end">
           <input ref="fileInputEl" type="file" accept="image/*,video/*" style="display:none" @change="onFileSelected" />
-          <div v-if="!isGlobalChat" style="display:flex;gap:2px;align-items:center;flex-shrink:0">
+          <div v-if="!isGlobalChat" style="display:flex;gap:1px;align-items:center;flex-shrink:0">
+            <el-button @click="toggleMorePanel" circle style="flex-shrink:0" title="更多">
+              <el-icon><plus /></el-icon>
+            </el-button>
             <el-button @click="openFilePicker" circle style="flex-shrink:0">
               <el-icon><folder-opened /></el-icon>
             </el-button>
@@ -273,6 +287,36 @@
             </button>
           </div>
         </div>
+
+        <div v-if="morePanelVisible" style="background:#fff;border:1px solid #ddd;padding:8px;border-radius:6px;margin-top:8px">
+          <el-button style="width:100%" @click="openPlayerCardDialog">玩家名片</el-button>
+        </div>
+
+        <el-dialog
+          v-model="playerCardDialogVisible"
+          title="发送玩家名片"
+          width="92%"
+          :close-on-click-modal="false"
+          @close="cancelPlayerCardDialog"
+        >
+          <el-select
+            v-model="playerCardSelectedUserId"
+            filterable
+            remote
+            reserve-keyword
+            :remote-method="onPlayerCardQuery"
+            :loading="playerCardUsersLoading"
+            placeholder="输入玩家名称"
+            style="width:100%"
+          >
+            <el-option v-for="u in playerCardOptions" :key="u.id" :label="u.username" :value="u.id" />
+          </el-select>
+
+          <template #footer>
+            <el-button @click="cancelPlayerCardDialog">取消</el-button>
+            <el-button type="primary" :loading="playerCardSending" :disabled="!playerCardSelectedUserId" @click="confirmSendPlayerCard">发送</el-button>
+          </template>
+        </el-dialog>
       </div>
 
       <el-drawer v-model="groupManageVisible" title="群聊管理" direction="btt" size="70%" class="group-manage-drawer">
