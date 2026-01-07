@@ -88,9 +88,18 @@
             </template>
 
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-              <el-button plain @click="openIdDialog">实名认证查询</el-button>
-              <el-button plain @click="openHistoryDialog">登录记录查询</el-button>
-              <el-button plain :loading="updating" :disabled="!isLoggedIn || updating || loading" @click="updateFace">更新头像</el-button>
+              <el-button plain @click="openIdDialog">
+                <el-icon style="margin-right:4px"><document /></el-icon>
+                实名认证查询
+              </el-button>
+              <el-button plain @click="openHistoryDialog">
+                <el-icon style="margin-right:4px"><clock /></el-icon>
+                登录记录查询
+              </el-button>
+              <el-button plain :loading="updating" :disabled="!isLoggedIn || updating || loading" @click="updateFace">
+                <el-icon style="margin-right:4px"><refresh /></el-icon>
+                更新头像
+              </el-button>
               <el-button plain :disabled="!isLoggedIn || updating || loading" @click="logout">
                 <el-icon style="margin-right:4px"><top-right /></el-icon>
                 登出
@@ -106,9 +115,12 @@
             </template>
 
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-              <el-button plain @click="openHomeDialog">Home查询</el-button>
+              <el-button plain @click="openHomeDialog">
+                <el-icon style="margin-right:4px"><search /></el-icon>
+                Home查询
+              </el-button>
               <el-button plain @click="gotoMaterials">
-                <el-icon style="margin-right:4px"><top-right /></el-icon>
+                <el-icon style="margin-right:4px"><list /></el-icon>
                 材料列表管理
               </el-button>
             </div>

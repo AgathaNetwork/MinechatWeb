@@ -583,6 +583,10 @@ const app = createApp({
       window.location.href = '/m/info.html';
     }
 
+    function gotoMaterials() {
+      window.location.href = '/m/materials.html';
+    }
+
     onMounted(async () => {
       await fetchConfig();
       await loadSelf();
@@ -609,6 +613,7 @@ const app = createApp({
       logout,
       goEmojiManage,
       gotoInfo,
+      gotoMaterials,
 
       // account dialogs
       idDialogVisible,
