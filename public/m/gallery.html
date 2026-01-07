@@ -36,7 +36,7 @@
       <div class="content-area">
         <el-card>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <el-input v-model="q" placeholder="按名称搜索（q）" clearable style="flex:1;min-width:160px" @keyup.enter="applyFilters"></el-input>
+            <el-input v-model="q" placeholder="按名称搜索" clearable style="flex:1;min-width:160px" @keyup.enter="applyFilters"></el-input>
             <el-button plain :loading="loading" @click="applyFilters">筛选</el-button>
             <el-button plain :disabled="loading" @click="resetFilters">重置</el-button>
           </div>
@@ -111,11 +111,12 @@
                     <el-tag size="small" effect="plain">{{ detail.year || '-' }}</el-tag>
                     <el-tag size="small" effect="plain">{{ detail.worldName }}</el-tag>
                     <el-tag size="small" effect="plain">{{ detail.typeName }}</el-tag>
-                    <el-tag size="small" type="info" effect="plain" v-if="detail.uploader">上传者：{{ detail.uploader }}</el-tag>
+                    <el-tag size="small" type="info" effect="plain" v-if="detail.uploader">{{ detail.uploader }}</el-tag>
                   </div>
 
                   <div v-if="detail.annotation" style="margin-top:10px;white-space:pre-wrap;word-break:break-word">{{ detail.annotation }}</div>
 
+                  <el-divider v-if="detail.players && detail.players.length" style="margin:14px 0 10px"></el-divider>
                   <div style="margin-top:10px" v-if="detail.players && detail.players.length">
                     <div style="font-weight:600;margin-bottom:6px">参与者</div>
                     <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -123,9 +124,14 @@
                     </div>
                   </div>
 
-                  <div style="margin-top:10px" v-if="detail.position && detail.position.mapUrl">
-                    <el-link :href="detail.position.mapUrl" target="_blank" type="primary">在地图中查看</el-link>
-                    <div style="font-size:12px;color:#666;margin-top:6px">{{ detail.positionText }}</div>
+                  <div style="margin-top:10px" v-if="(detail.position && detail.position.mapUrl) || (detail.positionRows && detail.positionRows.length)">
+                    <el-link v-if="detail.position && detail.position.mapUrl" :href="detail.position.mapUrl" target="_blank" type="primary">在地图中查看</el-link>
+                    <div style="margin-top:8px" v-if="detail.positionRows && detail.positionRows.length">
+                      <el-table :data="detail.positionRows" border size="small" style="width:100%" :show-header="false">
+                        <el-table-column prop="k" width="140"></el-table-column>
+                        <el-table-column prop="v"></el-table-column>
+                      </el-table>
+                    </div>
                   </div>
 
                   <div style="margin-top:10px" v-if="detail.metadataRows && detail.metadataRows.length">
@@ -160,7 +166,7 @@
           <span>玩家</span>
         </a>
         <a href="/m/gallery.html" class="nav-item active">
-          <el-icon :size="20"><picture /></el-icon>
+          <el-icon :size="20"><Collection /></el-icon>
           <span>相册</span>
         </a>
         <a href="/m/me.html" class="nav-item">

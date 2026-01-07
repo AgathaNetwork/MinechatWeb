@@ -1,5 +1,5 @@
 // Vue 3 + Element Plus gallery page
-const { createApp, ref, computed, onMounted } = Vue;
+const { createApp, ref, computed, onMounted, watch } = Vue;
 
 const app = createApp({
   setup() {
@@ -22,6 +22,57 @@ const app = createApp({
     const world = ref(null);
     const type = ref(null);
     const q = ref('');
+
+    const filterGuard = ref(false);
+
+    function clearOtherFilters(active) {
+      if (filterGuard.value) return;
+      filterGuard.value = true;
+      try {
+        if (active !== 'q') q.value = '';
+        if (active !== 'year') year.value = '';
+        if (active !== 'world') world.value = null;
+        if (active !== 'type') type.value = null;
+      } finally {
+        filterGuard.value = false;
+      }
+    }
+
+    watch(
+      q,
+      (v) => {
+        const s = String(v || '').trim();
+        if (s) clearOtherFilters('q');
+      },
+      { flush: 'sync' }
+    );
+
+    watch(
+      year,
+      (v) => {
+        const s = String(v || '').trim();
+        if (s) clearOtherFilters('year');
+      },
+      { flush: 'sync' }
+    );
+
+    watch(
+      world,
+      (v) => {
+        const has = v !== null && v !== undefined && String(v).trim() !== '';
+        if (has) clearOtherFilters('world');
+      },
+      { flush: 'sync' }
+    );
+
+    watch(
+      type,
+      (v) => {
+        const has = v !== null && v !== undefined && String(v).trim() !== '';
+        if (has) clearOtherFilters('type');
+      },
+      { flush: 'sync' }
+    );
 
     const detailVisible = ref(false);
     const detailLoading = ref(false);
@@ -72,7 +123,9 @@ const app = createApp({
       try {
         const n = Number(v);
         if (!Number.isFinite(n) || n <= 0) return '-';
-        const d = new Date(n);
+        // Backend may return seconds timestamps; normalize to milliseconds for Date.
+        const ms = n < 1e12 ? n * 1000 : n;
+        const d = new Date(ms);
         if (isNaN(d.getTime())) return '-';
         const y = d.getFullYear();
         const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -216,7 +269,7 @@ const app = createApp({
             worldName: worldNameFromId(w),
             typeName: typeNameFromId(t),
             annotation,
-            uploaderText: uploader ? `上传者：${uploader}` : '上传者：- ',
+            uploaderText: uploader ? `${uploader}` : '-',
             timeText: ts ? ymdhmFromTs(ts) : '-',
             thumbUrl,
           };
@@ -277,6 +330,30 @@ const app = createApp({
       }
     }
 
+    function worldDisplayNameFromCode(code) {
+      const c = String(code || '').trim();
+      if (!c) return '';
+      if (c === 'world') return '主世界';
+      if (c === 'world_nether') return '下界';
+      if (c === 'world_the_end') return '末地';
+      return c;
+    }
+
+    function buildPositionRows(pos) {
+      if (!pos || typeof pos !== 'object') return [];
+      const world = String(pos.world || '').trim();
+      if (!world || world === 'none') return [];
+      const x = pos.x;
+      const y = pos.y;
+      const z = pos.z;
+      return [
+        { k: '世界', v: worldDisplayNameFromCode(world) },
+        { k: 'X', v: x !== null && x !== undefined ? String(x) : '-' },
+        { k: 'Y', v: y !== null && y !== undefined ? String(y) : '-' },
+        { k: 'Z', v: z !== null && z !== undefined ? String(z) : '-' },
+      ];
+    }
+
     function kvRows(obj) {
       if (!obj || typeof obj !== 'object') return [];
       const rows = [];
@@ -285,6 +362,81 @@ const app = createApp({
         const vv = typeof v === 'string' ? v : JSON.stringify(v);
         rows.push({ k, v: vv });
       }
+      return rows;
+    }
+
+    function formatSizeFromKB(v) {
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0) return v === null || v === undefined ? '' : String(v);
+
+      const units = ['KB', 'MB', 'GB', 'TB'];
+      let value = n;
+      let idx = 0;
+      while (value >= 1000 && idx < units.length - 1) {
+        value /= 1000;
+        idx += 1;
+      }
+
+      let text;
+      if (idx === 0) {
+        text = String(Math.round(value));
+      } else if (value >= 100) {
+        text = value.toFixed(0);
+      } else if (value >= 10) {
+        text = value.toFixed(1);
+      } else {
+        text = value.toFixed(2);
+      }
+      text = text.replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1');
+      return `${text}${units[idx]}`;
+    }
+
+    function buildMetadataRows(metadata) {
+      if (!metadata || typeof metadata !== 'object') return [];
+
+      const labelMap = { name: '文件名', size: '大小', h: '高度', w: '宽度' };
+      const orderedKeys = ['name', 'size', 'h', 'w'];
+      const rows = [];
+
+      for (const k of orderedKeys) {
+        if (!(k in metadata)) continue;
+        const v = metadata[k];
+        if (v === null || v === undefined) continue;
+        const vv = k === 'size' ? formatSizeFromKB(v) : (typeof v === 'string' ? v : JSON.stringify(v));
+        rows.push({ k: labelMap[k], v: String(vv) });
+      }
+
+      for (const [k, v] of Object.entries(metadata)) {
+        if (v === null || v === undefined) continue;
+        if (orderedKeys.includes(k)) continue;
+        const vv = typeof v === 'string' ? v : JSON.stringify(v);
+        rows.push({ k: String(k), v: String(vv) });
+      }
+
+      return rows;
+    }
+
+    function buildShaderRows(shader) {
+      if (!shader || typeof shader !== 'object') return [];
+      const labelMap = { name: '光影名', config: '配置' };
+      const orderedKeys = ['name', 'config'];
+      const rows = [];
+
+      for (const k of orderedKeys) {
+        if (!(k in shader)) continue;
+        const v = shader[k];
+        if (v === null || v === undefined) continue;
+        const vv = typeof v === 'string' ? v : JSON.stringify(v);
+        rows.push({ k: labelMap[k], v: String(vv) });
+      }
+
+      for (const [k, v] of Object.entries(shader)) {
+        if (v === null || v === undefined) continue;
+        if (orderedKeys.includes(k)) continue;
+        const vv = typeof v === 'string' ? v : JSON.stringify(v);
+        rows.push({ k: String(k), v: String(vv) });
+      }
+
       return rows;
     }
 
@@ -314,9 +466,7 @@ const app = createApp({
         const metadata = safeJsonParse(d.metadata, null);
 
         const mapUrl = buildMapUrl(position);
-        const positionText = position && typeof position === 'object' && position.world && position.world !== 'none'
-          ? `世界：${position.world}，X：${position.x}，Y：${position.y}，Z：${position.z}`
-          : '';
+        const positionRows = buildPositionRows(position);
 
         detail.value = {
           id: d.id,
@@ -331,9 +481,9 @@ const app = createApp({
           imageUrl: normalizeImageUrl(d.url, imgBase),
           players: Array.isArray(players) ? players.map((x) => String(x)).filter(Boolean) : [],
           position: mapUrl ? { mapUrl } : null,
-          positionText,
-          metadataRows: kvRows(metadata),
-          shaderRows: kvRows(shader),
+          positionRows,
+          metadataRows: buildMetadataRows(metadata),
+          shaderRows: buildShaderRows(shader),
         };
       } catch (e) {
         detailError.value = e && e.message ? e.message : String(e);
