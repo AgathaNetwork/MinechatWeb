@@ -2102,8 +2102,8 @@ const app = createApp({
         const prevShadow = el.style.boxShadow;
         const prevRadius = el.style.borderRadius;
         el.style.borderRadius = '10px';
-        el.style.background = '#eef6ff';
-        el.style.boxShadow = '0 0 0 6px rgba(238, 246, 255, 0.95)';
+        el.style.background = 'var(--mc-active-bg)';
+        el.style.boxShadow = '0 0 0 6px var(--mc-active-bg)';
         setTimeout(() => {
           el.style.background = prevBg;
           el.style.boxShadow = prevShadow;
@@ -2175,11 +2175,11 @@ const app = createApp({
     }
 
     function bubbleBackground(m) {
-      if (!m) return '#fff';
-      if (isRecalledMessage(m)) return '#f7f7f7';
-      if (m.__status === 'sending') return '#eef6ff';
-      if (m.__status === 'failed') return '#ffecec';
-      return '#fff';
+      if (!m) return 'var(--mc-surface)';
+      if (isRecalledMessage(m)) return 'var(--el-fill-color-lighter)';
+      if (m.__status === 'sending') return 'var(--mc-active-bg)';
+      if (m.__status === 'failed') return 'var(--el-color-danger-light-9)';
+      return 'var(--mc-surface)';
     }
 
     function removeMessageById(messageId) {

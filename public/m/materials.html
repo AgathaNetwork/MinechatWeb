@@ -28,7 +28,9 @@
     <div id="app" v-cloak>
       <div class="top-bar">
         <div style="display:flex;align-items:center;gap:8px">
-          <el-button size="small" plain @click="goBack">返回</el-button>
+          <el-button @click="goBack" circle size="small">
+            <el-icon><arrow-left /></el-icon>
+          </el-button>
           <h3 style="margin:0">材料列表</h3>
         </div>
         <div style="display:flex;align-items:center;gap:8px">

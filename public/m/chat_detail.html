@@ -51,7 +51,7 @@
   <body>
     <div id="app" v-cloak>
       <div class="top-bar">
-        <el-button @click="goBack" size="small" style="padding:5px 10px">
+        <el-button @click="goBack" circle size="small">
           <el-icon><arrow-left /></el-icon>
         </el-button>
         <el-avatar v-if="currentChatFaceUrl" shape="square" :src="currentChatFaceUrl" :size="32"></el-avatar>
@@ -276,7 +276,7 @@
           </div>
         </el-dialog>
 
-        <div v-if="emojiPanelVisible" style="max-height:200px;overflow:auto;background:#fff;border:1px solid #ddd;padding:8px;border-radius:6px;margin-top:8px">
+        <div v-if="emojiPanelVisible" style="max-height:200px;overflow:auto;background:var(--mc-surface);border:1px solid var(--mc-border);padding:8px;border-radius:6px;margin-top:8px;color:var(--el-text-color-primary)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
             <strong>我的表情包</strong>
             <el-button size="small" @click="goEmojiManage">管理</el-button>
@@ -288,7 +288,7 @@
           </div>
         </div>
 
-        <div v-if="morePanelVisible" style="background:#fff;border:1px solid #ddd;padding:8px;border-radius:6px;margin-top:8px">
+        <div v-if="morePanelVisible" style="background:var(--mc-surface);border:1px solid var(--mc-border);padding:8px;border-radius:6px;margin-top:8px;color:var(--el-text-color-primary)">
           <el-button style="width:100%" @click="openPlayerCardDialog">玩家名片</el-button>
         </div>
 
