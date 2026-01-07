@@ -3,9 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <script src="/theme.js"></script>
     <title>工作台 - Minechat</title>
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/theme-chalk/dark/css-vars.css" />
     <style>
       [v-cloak]{display:none}
       html,body{height:100%;overflow:hidden;overscroll-behavior:none;-webkit-text-size-adjust:100%}
@@ -146,6 +148,19 @@
               </el-button>
               <div style="flex:1" aria-hidden="true"></div>
             </div>
+          </div>
+        </el-card>
+
+        <el-card style="margin-top:12px">
+          <template #header>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-weight:600">设置</span>
+            </div>
+          </template>
+
+          <div style="padding:12px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+            <div style="font-size:14px;color:var(--mc-text-regular)">主题</div>
+            <el-switch v-model="themeDark" inline-prompt active-text="深色" inactive-text="浅色"></el-switch>
           </div>
         </el-card>
       </div>

@@ -3,24 +3,26 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="/theme.js"></script>
     <title>Minechat</title>
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/theme-chalk/dark/css-vars.css" />
     <style>
       [v-cloak]{display:none}
       .msg-row{width:100%}
-      .msg-time{opacity:0;transition:opacity .12s ease;font-size:12px;color:#888;user-select:none;white-space:nowrap}
+      .msg-time{opacity:0;transition:opacity .12s ease;font-size:12px;color:var(--mc-text-secondary);user-select:none;white-space:nowrap}
       .msg-row:hover .msg-time{opacity:1}
-      .time-divider{display:flex;align-items:center;justify-content:center;margin:10px 0;color:#999;font-size:12px;user-select:none}
-      .time-divider:before,.time-divider:after{content:'';flex:1;border-top:1px solid #e6e6e6}
-      .time-divider-text{padding:0 10px;white-space:nowrap;background:#fff}
+      .time-divider{display:flex;align-items:center;justify-content:center;margin:10px 0;color:var(--mc-text-secondary);font-size:12px;user-select:none}
+      .time-divider:before,.time-divider:after{content:'';flex:1;border-top:1px solid var(--mc-border)}
+      .time-divider-text{padding:0 10px;white-space:nowrap;background:var(--mc-surface)}
       .chat-preview{display:inline-flex;align-items:center;gap:6px;min-width:0}
       .chat-preview-suffix{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       .el-tag.chat-preview-tag-tight{--el-tag-height:16px;height:16px !important;line-height:16px !important;padding:0 6px !important;font-size:11px !important}
       .img-preview-mask{position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px}
-      .img-preview-img{max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;background:#fff;touch-action:none;user-select:none;cursor:grab;transform-origin:0 0}
+      .img-preview-img{max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;background:var(--mc-surface);touch-action:none;user-select:none;cursor:grab;transform-origin:0 0}
       .img-preview-img.dragging{cursor:grabbing}
-      .loading-spinner{width:40px;height:40px;border:4px solid #f3f3f3;border-top:4px solid #409eff;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto}
+      .loading-spinner{width:40px;height:40px;border:4px solid var(--mc-border);border-top:4px solid var(--el-color-primary, #409eff);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto}
       @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
 
       .mc-rich-input{flex:1;min-width:0;min-height:32px;box-sizing:border-box;border:1px solid var(--el-border-color);border-radius:var(--el-border-radius-base);padding:5px 10px;line-height:22px;background:var(--el-fill-color-blank);color:var(--el-text-color-primary);outline:none;display:block;word-break:break-word;white-space:pre-wrap}
@@ -51,10 +53,10 @@
         </el-header>
 
         <el-container style="min-height:0">
-          <el-aside width="280px" style="border-right:1px solid #e6e6e6;background:#fff;padding:12px;overflow:auto">
+          <el-aside width="280px" style="border-right:1px solid var(--mc-border);background:var(--mc-surface);padding:12px;overflow:auto">
             <div>
               <h3 style="margin:0 0 8px 0">全服聊天</h3>
-              <div @click="openGlobal" :style="{cursor:'pointer',padding:'8px',borderRadius:'6px',background: currentChatId==='global' ? '#eef6ff' : 'transparent'}">
+              <div @click="openGlobal" :style="{cursor:'pointer',padding:'8px',borderRadius:'6px',background: currentChatId==='global' ? 'var(--mc-active-bg)' : 'transparent'}">
                 <div style="display:flex;align-items:center;gap:10px">
                   <el-avatar shape="square" src="/img/Ag_0404.png" :size="40"></el-avatar>
                   <div style="font-weight:500">全服</div>
@@ -81,7 +83,7 @@
                 </template>
                 <template #default>
                   <div v-for="c in chats" :key="c.id" @click="onChatClick(c)"
-                      :style="{cursor:'pointer',padding:'8px',borderRadius:'6px',marginBottom:'6px',background: currentChatId===c.id ? '#eef6ff' : 'transparent',position:'relative'}">
+                      :style="{cursor:'pointer',padding:'8px',borderRadius:'6px',marginBottom:'6px',background: currentChatId===c.id ? 'var(--mc-active-bg)' : 'transparent',position:'relative'}">
                     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
                       <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
                         <div style="position:relative;width:40px;height:40px;flex-shrink:0">
@@ -89,12 +91,12 @@
                           <el-avatar v-else shape="square" :size="40">{{ getChatInitial(c) }}</el-avatar>
                           <span
                             v-if="isChatPeerOnline(c)"
-                            style="position:absolute;right:-1px;bottom:-1px;width:10px;height:10px;border-radius:50%;background:#1890ff;border:2px solid #fff"
+                            style="position:absolute;right:-1px;bottom:-1px;width:10px;height:10px;border-radius:50%;background:#1890ff;border:2px solid var(--mc-surface)"
                           ></span>
                         </div>
                         <div style="flex:1;min-width:0">
                           <div style="font-weight:500;margin-bottom:4px">{{ getChatName(c) }}</div>
-                          <div style="font-size:12px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                          <div style="font-size:12px;color:var(--mc-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
                             <template v-if="isGroupChatItem(c)">
                               <span class="chat-preview">
                                 <el-tag
@@ -161,7 +163,7 @@
                   </template>
                   <div style="display:flex;flex-direction:column;gap:8px">
                     <el-button size="small" type="primary" plain @click="openGroupManage">群聊管理</el-button>
-                    <div style="font-size:12px;color:#888">鼠标悬停此处打开入口</div>
+                    <div style="font-size:12px;color:var(--mc-text-secondary)">鼠标悬停此处打开入口</div>
                   </div>
                 </el-popover>
               </div>
@@ -179,13 +181,13 @@
                   @mousedown.prevent="onImagePreviewMouseDown"
                 />
               </div>
-              <div v-if="chatLoading" style="position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.95);display:flex;align-items:center;justify-content:center;z-index:1000;border-radius:8px">
+              <div v-if="chatLoading" style="position:absolute;top:0;left:0;right:0;bottom:0;background:var(--mc-surface);display:flex;align-items:center;justify-content:center;z-index:1000;border-radius:8px">
                 <div style="text-align:center">
                   <div class="loading-spinner"></div>
-                  <div style="margin-top:12px;color:#666;font-size:14px">加载中...</div>
+                  <div style="margin-top:12px;color:var(--mc-text-regular);font-size:14px">加载中...</div>
                 </div>
               </div>
-              <div ref="messagesEl" @scroll="onMessagesScroll" style="width:100%;height:100%;padding:12px;overflow:auto;background:#fff;border:1px solid #eee;border-radius:8px">
+              <div ref="messagesEl" @scroll="onMessagesScroll" style="width:100%;height:100%;padding:12px;overflow:auto;background:var(--mc-surface);border:1px solid var(--mc-border);border-radius:8px">
                 <div v-if="loadingMore" style="display:flex;justify-content:center;padding:6px 0">
                   <div class="loading-spinner" style="width:22px;height:22px;border-width:3px"></div>
                 </div>
@@ -198,10 +200,10 @@
                      :style="{ display:'flex', justifyContent: isOwnMessage(m) ? 'flex-end' : 'flex-start', marginBottom:'10px', gap: '8px' }">
                 <el-avatar v-if="!isOwnMessage(m) && messageAuthorFaceUrl(m)" shape="square" :src="messageAuthorFaceUrl(m)" :size="36" style="flex-shrink:0"></el-avatar>
                 <div :style="{ maxWidth:'80%', display:'flex', flexDirection:'column', alignItems: isOwnMessage(m) ? 'flex-end' : 'flex-start' }">
-                  <div style="font-size:12px;color:#888;margin:0 6px 4px 6px">{{ messageAuthorName(m) }}</div>
+                  <div style="font-size:12px;color:var(--mc-text-secondary);margin:0 6px 4px 6px">{{ messageAuthorName(m) }}</div>
 
                   <div v-if="!isGlobalChat && m.replied_to && repliedRefMessage(m)" class="reply-quote"
-                       style="padding:6px 8px;border-left:3px solid #ccc;background:#f7f7f7;margin:0 0 6px 0;border-radius:6px;width:100%">
+                       style="padding:6px 8px;border-left:3px solid var(--mc-border);background:var(--el-fill-color-lighter);margin:0 0 6px 0;border-radius:6px;width:100%">
                     <span style="cursor:pointer" @click="scrollToMessage((typeof m.replied_to==='object') ? (m.replied_to.id||'') : m.replied_to)">
                       {{ messageAuthorName(repliedRefMessage(m)) }}:
                       <template v-if="messagePreviewTag(repliedRefMessage(m))">
@@ -217,7 +219,7 @@
                   <div style="display:flex;align-items:flex-end;gap:6px">
                     <span v-if="isOwnMessage(m)" class="msg-time">{{ formatTime(m) }}</span>
                     <div @contextmenu.prevent="onMessageContextMenu($event, m)"
-                         :style="{ padding:'8px 10px', borderRadius:'12px', border:'1px solid #eee', background: bubbleBackground(m), width:'fit-content', maxWidth:'100%' }">
+                      :style="{ padding:'8px 10px', borderRadius:'12px', border:'1px solid var(--mc-border)', background: bubbleBackground(m), width:'fit-content', maxWidth:'100%' }">
                       <template v-if="isRecalledMessage(m)">
                         <el-tag type="info" effect="plain" size="small">{{ recallNoticeText(m) }}</el-tag>
                       </template>
@@ -229,20 +231,20 @@
                           <el-avatar shape="square" :size="44" :src="m.content.faceUrl" style="flex-shrink:0">{{ (m.content.name||'?').slice(0,1) }}</el-avatar>
                           <div style="min-width:0;flex:1">
                             <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ m.content.name || '未知玩家' }}</div>
-                            <div style="font-size:12px;color:#666;margin-top:2px">等级：{{ (m.content.level===null || m.content.level===undefined || m.content.level==='') ? '-' : m.content.level }}</div>
+                              <div style="font-size:12px;color:var(--mc-text-regular);margin-top:2px">等级：{{ (m.content.level===null || m.content.level===undefined || m.content.level==='') ? '-' : m.content.level }}</div>
                           </div>
                         </div>
                       </template>
                       <template v-else-if="m.type==='file' && m.content && isImageFile(m)">
                         <img :src="fileDisplayUrl(m)" :alt="m.content.filename || 'image'" style="max-width:320px;max-height:240px;display:block;border-radius:8px;cursor:pointer" @click.stop="openImagePreview(fileOriginalUrl(m))" />
-                        <div v-if="m.content.filename" style="margin-top:6px;font-size:12px;color:#666">{{ messageFilename(m) }}</div>
+                        <div v-if="m.content.filename" style="margin-top:6px;font-size:12px;color:var(--mc-text-regular)">{{ messageFilename(m) }}</div>
                       </template>
                       <template v-else-if="m.type==='file' && m.content && isVideoFile(m)">
                         <video :src="fileDisplayUrl(m)" controls style="max-width:320px;max-height:240px;display:block;border-radius:8px" :poster="m.content.thumbnailUrl || ''"></video>
-                        <div v-if="m.content.filename" style="margin-top:6px;font-size:12px;color:#666">{{ messageFilename(m) }}</div>
+                        <div v-if="m.content.filename" style="margin-top:6px;font-size:12px;color:var(--mc-text-regular)">{{ messageFilename(m) }}</div>
                       </template>
                       <template v-else-if="m.type==='file' && m.content && m.content.url">
-                        <a :href="m.content.url" target="_blank" rel="noopener" style="color:#0366d6;text-decoration:none">
+                        <a :href="m.content.url" target="_blank" rel="noopener" style="color:var(--mc-link);text-decoration:none">
                           {{ messageFilename(m) || '下载文件' }}
                         </a>
                       </template>
@@ -259,12 +261,12 @@
                     <span v-if="!isOwnMessage(m)" class="msg-time">{{ formatTime(m) }}</span>
                   </div>
 
-                  <div v-if="showReadCount(m)" @click.stop="openReadersDialog(m)" style="display:flex;align-items:center;gap:6px;font-size:12px;color:#999;margin:4px 6px 0 6px;cursor:pointer">
+                  <div v-if="showReadCount(m)" @click.stop="openReadersDialog(m)" style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--mc-text-secondary);margin:4px 6px 0 6px;cursor:pointer">
                     <el-icon style="font-size:16px;line-height:1"><user-filled /></el-icon>
                     <span>{{ readCountFor(m) }}</span>
                   </div>
 
-                  <div v-if="showReadStatus(m)" @click.stop="openReadersDialog(m)" style="font-size:12px;color:#999;margin:4px 6px 0 6px;cursor:pointer">
+                  <div v-if="showReadStatus(m)" @click.stop="openReadersDialog(m)" style="font-size:12px;color:var(--mc-text-secondary);margin:4px 6px 0 6px;cursor:pointer">
                     {{ readStatusTextFor(m) }}
                   </div>
                 </div>
@@ -274,7 +276,7 @@
             </div>
             </div>
 
-            <div v-if="ctxMenuVisible" @click.stop style="position:fixed;z-index:9999;background:#fff;border:1px solid #dcdfe6;border-radius:6px;padding:6px;min-width:120px"
+              <div v-if="ctxMenuVisible" @click.stop style="position:fixed;z-index:9999;background:var(--mc-surface);border:1px solid var(--mc-border);border-radius:6px;padding:6px;min-width:120px"
                  :style="{ left: ctxMenuX + 'px', top: ctxMenuY + 'px' }">
               <div v-if="canCopyText(ctxMenuMsg)" style="cursor:pointer;padding:6px 10px" @click="ctxCopy">复制</div>
               <div v-if="!isGlobalChat && canMentionFromMessage(ctxMenuMsg)" style="cursor:pointer;padding:6px 10px" @click="ctxMention">@TA</div>
@@ -283,7 +285,7 @@
               <div v-if="!isGlobalChat && canCollectEmoji(ctxMenuMsg)" style="cursor:pointer;padding:6px 10px" @click="ctxCollectEmoji">添加到表情包</div>
             </div>
 
-            <div v-if="replyTarget" style="margin-top:10px;padding:8px;border-left:3px solid #ccc;background:#f7f7f7;border-radius:6px">
+            <div v-if="replyTarget" style="margin-top:10px;padding:8px;border-left:3px solid var(--mc-border);background:var(--el-fill-color-lighter);border-radius:6px">
               <small>回复: {{ replyPreview }}</small>
               <el-button size="small" style="margin-left:8px" @click="clearReplyTarget">取消</el-button>
             </div>
@@ -323,13 +325,13 @@
               >
                 <div style="display:flex;flex-direction:column;gap:10px">
                   <el-checkbox v-if="canMentionAll" v-model="mentionSelectAll">@全体</el-checkbox>
-                  <div style="max-height:260px;overflow:auto;border:1px solid #eee;border-radius:8px;padding:8px">
+                  <div style="max-height:260px;overflow:auto;border:1px solid var(--mc-border);border-radius:8px;padding:8px">
                     <div style="display:flex;flex-direction:column;gap:6px">
                       <div
                         v-for="mid in mentionMemberIds"
                         :key="mid"
                         @click="toggleMentionSelected(mid)"
-                        style="display:flex;align-items:center;justify-content:space-between;padding:6px 4px;border-bottom:1px solid #f3f3f3;cursor:pointer"
+                        style="display:flex;align-items:center;justify-content:space-between;padding:6px 4px;border-bottom:1px solid var(--mc-border);cursor:pointer"
                       >
                         <div style="display:flex;gap:10px;align-items:flex-start;min-width:0;flex:1">
                           <el-checkbox
@@ -343,12 +345,12 @@
                               <el-tag v-if="String(mid)===String(groupOwnerId)" type="info" effect="plain" size="small">群主</el-tag>
                               <el-tag v-else-if="groupAdmins.includes(String(mid))" type="info" effect="plain" size="small">管理员</el-tag>
                             </div>
-                            <div style="font-size:12px;color:#888">{{ userMinecraftId(mid) || '未绑定minecraft uuid' }}</div>
+                            <div style="font-size:12px;color:var(--mc-text-secondary)">{{ userMinecraftId(mid) || '未绑定minecraft uuid' }}</div>
                           </div>
                         </div>
                       </div>
                     </div>
-                    <div v-if="(!mentionMemberIds || mentionMemberIds.length===0)" style="font-size:12px;color:#999;padding:6px 2px">没有可选成员</div>
+                    <div v-if="(!mentionMemberIds || mentionMemberIds.length===0)" style="font-size:12px;color:var(--mc-text-secondary);padding:6px 2px">没有可选成员</div>
                   </div>
                 </div>
 
@@ -369,18 +371,18 @@
                   <el-skeleton animated :rows="4" />
                 </div>
                 <div v-else style="display:flex;flex-direction:column;gap:8px;max-height:360px;overflow:auto">
-                  <div v-if="!readersList || readersList.length===0" style="font-size:12px;color:#999">暂无已读用户</div>
-                  <div v-for="u in readersList" :key="u.id" style="display:flex;align-items:center;gap:10px;padding:6px 4px;border-bottom:1px solid #f3f3f3">
+                  <div v-if="!readersList || readersList.length===0" style="font-size:12px;color:var(--mc-text-secondary)">暂无已读用户</div>
+                  <div v-for="u in readersList" :key="u.id" style="display:flex;align-items:center;gap:10px;padding:6px 4px;border-bottom:1px solid var(--mc-border)">
                     <el-avatar :size="32" shape="square" :src="u.faceUrl" style="flex-shrink:0">{{ (u.name||'?').slice(0,1) }}</el-avatar>
                     <div style="min-width:0;flex:1">
                       <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ u.name }}</div>
-                      <div style="font-size:12px;color:#888">{{ u.id }}</div>
+                      <div style="font-size:12px;color:var(--mc-text-secondary)">{{ u.id }}</div>
                     </div>
                   </div>
                 </div>
               </el-dialog>
 
-              <div v-if="emojiPanelVisible" @click.stop style="position:absolute;left:0;bottom:46px;width:320px;max-height:320px;overflow:auto;background:#fff;border:1px solid #ddd;padding:8px;box-shadow:0 4px 12px rgba(0,0,0,0.08);border-radius:8px">
+              <div v-if="emojiPanelVisible" @click.stop style="position:absolute;left:0;bottom:46px;width:320px;max-height:320px;overflow:auto;background:var(--mc-surface);border:1px solid var(--mc-border);padding:8px;box-shadow:0 4px 12px rgba(0,0,0,0.08);border-radius:8px">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
                   <strong>我的表情包</strong>
                   <el-button size="small" @click="goEmojiManage">管理</el-button>
@@ -392,7 +394,7 @@
                 </div>
               </div>
 
-              <div v-if="morePanelVisible" @click.stop style="position:absolute;left:0;bottom:46px;width:320px;max-height:320px;overflow:auto;background:#fff;border:1px solid #ddd;padding:8px;box-shadow:0 4px 12px rgba(0,0,0,0.08);border-radius:8px">
+              <div v-if="morePanelVisible" @click.stop style="position:absolute;left:0;bottom:46px;width:320px;max-height:320px;overflow:auto;background:var(--mc-surface);border:1px solid var(--mc-border);padding:8px;box-shadow:0 4px 12px rgba(0,0,0,0.08);border-radius:8px">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
                   <strong>更多</strong>
                 </div>
@@ -440,7 +442,7 @@
                 <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
                   <el-input v-model="groupEditName" placeholder="群聊名称" style="flex:1;min-width:220px"></el-input>
                   <el-button type="primary" :loading="groupActionLoading" :disabled="!groupCanManage" @click="saveGroupName">保存名称</el-button>
-                  <span v-if="!groupCanManage" style="font-size:12px;color:#888">无权限修改</span>
+                  <span v-if="!groupCanManage" style="font-size:12px;color:var(--mc-text-secondary)">无权限修改</span>
                 </div>
 
                 <div v-if="groupCanManage" style="margin-top:12px">
@@ -449,7 +451,7 @@
                     <div style="display:flex;align-items:center;gap:8px">
                       <el-avatar v-if="currentChatFaceUrl" shape="square" :src="currentChatFaceUrl" :size="36"></el-avatar>
                       <el-avatar v-else shape="square" :size="36">群</el-avatar>
-                      <div style="font-size:12px;color:#888">群头像</div>
+                      <div style="font-size:12px;color:var(--mc-text-secondary)">群头像</div>
                     </div>
                     <el-button type="primary" plain :loading="groupActionLoading" @click="openGroupAvatarPicker">设置群头像</el-button>
                   </div>
@@ -467,15 +469,15 @@
 
                 <div style="margin-top:16px">
                   <div style="font-weight:600;margin-bottom:8px">成员</div>
-                  <div style="max-height:220px;overflow:auto;border:1px solid #eee;border-radius:8px;padding:8px;background:#fff">
-                    <div v-for="mid in groupMembers" :key="mid" style="display:flex;align-items:center;justify-content:space-between;padding:6px 4px;border-bottom:1px solid #f3f3f3">
+                  <div style="max-height:220px;overflow:auto;border:1px solid var(--mc-border);border-radius:8px;padding:8px;background:var(--mc-surface)">
+                    <div v-for="mid in groupMembers" :key="mid" style="display:flex;align-items:center;justify-content:space-between;padding:6px 4px;border-bottom:1px solid var(--mc-border)">
                       <div style="min-width:0">
                         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
                           <span style="font-weight:500">{{ userLabel(mid) }}</span>
                           <el-tag v-if="String(mid)===String(groupOwnerId)" type="info" effect="plain" size="small">群主</el-tag>
                           <el-tag v-else-if="groupAdmins.includes(String(mid))" type="info" effect="plain" size="small">管理员</el-tag>
                         </div>
-                        <div style="font-size:12px;color:#888">{{ userMinecraftId(mid) || '未绑定minecraft uuid' }}</div>
+                        <div style="font-size:12px;color:var(--mc-text-secondary)">{{ userMinecraftId(mid) || '未绑定minecraft uuid' }}</div>
                       </div>
                       <div style="display:flex;gap:6px;align-items:center">
                         <el-button

@@ -3,9 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <script src="/theme.js"></script>
     <title>会话 - Minechat</title>
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/theme-chalk/dark/css-vars.css" />
     <style>
       [v-cloak]{display:none}
       html,body{height:100%;overflow:hidden;overscroll-behavior:none;-webkit-text-size-adjust:100%}
@@ -17,8 +19,8 @@
       .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;color:#666;font-size:12px;padding:4px;text-decoration:none}
       .nav-item.active{color:#409eff}
       .section-title{font-size:16px;font-weight:600;margin:0 0 8px 0}
-      .chat-item{padding:12px;border-bottom:1px solid #f0f0f0;cursor:pointer;display:flex;gap:10px;align-items:center;text-decoration:none;color:inherit}
-      .chat-item:active{background:#f5f5f5}
+      .chat-item{padding:12px;border-bottom:1px solid var(--mc-border);cursor:pointer;display:flex;gap:10px;align-items:center;text-decoration:none;color:inherit}
+      .chat-item:active{background:var(--mc-active-bg)}
       .unread-dot{width:8px;height:8px;border-radius:50%;background:#1890ff;flex-shrink:0}
       .chat-preview{display:inline-flex;align-items:center;gap:6px;min-width:0}
       .chat-preview-suffix{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

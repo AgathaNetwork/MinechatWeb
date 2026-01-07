@@ -3,9 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <script src="/theme.js"></script>
     <title>相册 - Minechat</title>
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/theme-chalk/dark/css-vars.css" />
     <style>
       [v-cloak]{display:none}
       html,body{height:100%;overflow:hidden;overscroll-behavior:none;-webkit-text-size-adjust:100%}
@@ -21,8 +23,8 @@
       .g-thumb{width:100%;height:180px;border-radius:8px;overflow:hidden;background:var(--el-fill-color-lighter);border:1px solid var(--el-border-color-lighter)}
       .g-thumb img{width:100%;height:100%;object-fit:cover;display:block}
       .g-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
-      .g-sub{font-size:12px;color:#888;line-height:1.5;margin-top:6px}
-      .g-desc{margin-top:8px;font-size:13px;color:#444;line-height:1.5;word-break:break-word}
+      .g-sub{font-size:12px;color:var(--mc-text-secondary);line-height:1.5;margin-top:6px}
+      .g-desc{margin-top:8px;font-size:13px;color:var(--mc-text-regular);line-height:1.5;word-break:break-word}
       .g-detail-img{width:100%;max-height:55vh;object-fit:contain;background:var(--el-fill-color-lighter);border-radius:8px;border:1px solid var(--el-border-color-lighter)}
     </style>
   </head>

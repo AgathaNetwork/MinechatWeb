@@ -9,6 +9,20 @@ const app = createApp({
     const token = ref(localStorage.getItem('token') || null);
     const sessionOk = ref(false);
 
+    const theme = ref((window.MinechatTheme && window.MinechatTheme.get && window.MinechatTheme.get()) || 'light');
+    const themeDark = computed({
+      get() {
+        return theme.value === 'dark';
+      },
+      set(v) {
+        const t = v ? 'dark' : 'light';
+        theme.value = t;
+        try {
+          if (window.MinechatTheme && window.MinechatTheme.set) window.MinechatTheme.set(t);
+        } catch (e) {}
+      },
+    });
+
     const loading = ref(false);
     const updating = ref(false);
 
@@ -1021,6 +1035,7 @@ const app = createApp({
       loading,
       updating,
       isLoggedIn,
+      themeDark,
       selfUserId,
       selfUsername,
       selfFaceUrl,

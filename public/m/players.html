@@ -3,9 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <script src="/theme.js"></script>
     <title>玩家 - Minechat</title>
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/theme-chalk/dark/css-vars.css" />
     <style>
       [v-cloak]{display:none}
       html,body{height:100%;overflow:hidden;overscroll-behavior:none;-webkit-text-size-adjust:100%}
@@ -16,7 +18,7 @@
       .bottom-nav{position:fixed;bottom:0;left:0;right:0;height:56px;background:#fff;border-top:1px solid #e6e6e6;display:flex;justify-content:space-around;align-items:center;z-index:100}
       .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;color:#666;font-size:12px;padding:4px;text-decoration:none}
       .nav-item.active{color:#409eff}
-      .player-item{padding:12px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center}
+      .player-item{padding:12px;border-bottom:1px solid var(--mc-border);display:flex;justify-content:space-between;align-items:center}
     </style>
   </head>
   <body>

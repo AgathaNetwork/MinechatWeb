@@ -3288,11 +3288,12 @@ const app = createApp({
     }
 
     function bubbleBackground(m) {
-      if (!m) return '#fff';
-      if (isRecalledMessage(m)) return '#f7f7f7';
-      if (m.__status === 'sending') return '#eef6ff';
-      if (m.__status === 'failed') return '#ffecec';
-      return '#fff';
+      // Use theme variables so it works for both light & dark.
+      if (!m) return 'var(--mc-surface)';
+      if (isRecalledMessage(m)) return 'var(--el-fill-color-lighter)';
+      if (m.__status === 'sending') return 'var(--mc-active-bg)';
+      if (m.__status === 'failed') return 'var(--el-color-danger-light-9)';
+      return 'var(--mc-surface)';
     }
 
     function isRecalledMessage(m) {
