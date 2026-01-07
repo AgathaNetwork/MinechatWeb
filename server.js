@@ -49,7 +49,9 @@ app.use(
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/config', (req, res) => {
-  res.json({ apiBase, apiProxyBase: '/api' });
+  // `galleryImgBase` is optional. When provided, frontends can normalize image URLs.
+  const galleryImgBase = config.gallery_img_base ? String(config.gallery_img_base) : undefined;
+  res.json({ apiBase, apiProxyBase: '/api', galleryImgBase });
 });
 
 app.get('/health', (req, res) => res.json({ ok: true, apiBase }));

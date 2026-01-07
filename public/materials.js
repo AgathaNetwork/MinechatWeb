@@ -91,6 +91,7 @@ const app = createApp({
     function onNav(key) {
       if (key === 'chat') window.location.href = '/chat.html';
       else if (key === 'players') window.location.href = '/players.html';
+      else if (key === 'gallery') window.location.href = '/gallery.html';
       else if (key === 'me') window.location.href = '/me.html';
     }
 
