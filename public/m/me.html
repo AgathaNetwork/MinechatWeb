@@ -19,6 +19,8 @@
       .nav-item.active{color:#409eff}
       .action-row{display:flex;gap:8px}
       .action-row .el-button{flex:1;min-width:0}
+      .action-row.two-cols{flex-wrap:wrap}
+      .action-row.two-cols .el-button{flex:0 0 calc((100% - 8px) / 2)}
       .playtime-months{display:grid;grid-template-columns:repeat(auto-fit, 260px);gap:12px;justify-content:center;align-items:start}
       .playtime-month-card{width:260px}
       .playtime-month-title{font-weight:600;text-align:center;margin-bottom:6px}
@@ -126,7 +128,7 @@
           </template>
 
           <div style="padding:12px">
-            <div class="action-row">
+            <div class="action-row two-cols">
               <el-button plain @click="openHomeDialog">
                 <el-icon style="margin-right:4px"><search /></el-icon>
                 Home查询
