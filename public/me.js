@@ -614,6 +614,10 @@ const app = createApp({
     function gotoLogin() {
       window.location.href = '/';
     }
+
+    function gotoMaterials() {
+      window.location.href = '/materials.html';
+    }
     
       function gotoInfo() {
         window.location.href = '/info.html';
@@ -681,6 +685,7 @@ const app = createApp({
       // actions
       onNav,
       gotoLogin,
+      gotoMaterials,
       gotoInfo,
       logout,
       reloadSelf,
