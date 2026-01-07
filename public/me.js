@@ -51,6 +51,211 @@ const app = createApp({
     const homeWorldFilter = ref(''); // '', 'world', 'world_nether', 'world_the_end'
     const homesList = ref([]); // [{ name, worldKey, worldLabel, x, y, z, yaw, pitch }]
 
+    // Game services: Playtime records
+    const playtimeDialogVisible = ref(false);
+    const playtimeLoading = ref(false);
+    const playtimeError = ref('');
+    const playtimeSummaryText = ref('');
+    const playtimeDaySecondsMap = ref({}); // { 'YYYY-MM-DD': seconds }
+
+    const playtimeHasAny = computed(() => {
+      const m = playtimeDaySecondsMap.value;
+      return !!m && typeof m === 'object' && Object.keys(m).length > 0;
+    });
+
+    function monthTitle(y, m) {
+      return `${y}年${String(m).padStart(2, '0')}月`;
+    }
+
+    function monthKey(y, m) {
+      return `${y}-${String(m).padStart(2, '0')}`;
+    }
+
+    function daysInMonth(y, m) {
+      return new Date(y, m, 0).getDate();
+    }
+
+    function ymdFromParts(y, m, d) {
+      return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    }
+
+    let _playtimeColorsCache = null;
+
+    function parseCssColorToRgb(color) {
+      try {
+        const s = String(color || '').trim();
+        if (!s) return null;
+        if (s.startsWith('#')) {
+          const hex = s.slice(1);
+          if (hex.length === 3) {
+            const r = parseInt(hex[0] + hex[0], 16);
+            const g = parseInt(hex[1] + hex[1], 16);
+            const b = parseInt(hex[2] + hex[2], 16);
+            return [r, g, b];
+          }
+          if (hex.length === 6) {
+            const r = parseInt(hex.slice(0, 2), 16);
+            const g = parseInt(hex.slice(2, 4), 16);
+            const b = parseInt(hex.slice(4, 6), 16);
+            return [r, g, b];
+          }
+          return null;
+        }
+        const m = s.match(/rgba?\(([^)]+)\)/i);
+        if (m) {
+          const parts = m[1]
+            .split(',')
+            .map((x) => x.trim())
+            .filter(Boolean);
+          if (parts.length < 3) return null;
+          const r = Math.round(Number(parts[0]));
+          const g = Math.round(Number(parts[1]));
+          const b = Math.round(Number(parts[2]));
+          if (![r, g, b].every((n) => Number.isFinite(n))) return null;
+          return [r, g, b];
+        }
+        return null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function readCssVarRgb(varName) {
+      try {
+        const v = getComputedStyle(document.documentElement).getPropertyValue(varName);
+        return parseCssColorToRgb(v);
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function getPlaytimeThemeColors() {
+      if (_playtimeColorsCache) return _playtimeColorsCache;
+      const primary = readCssVarRgb('--el-color-primary');
+      const base = readCssVarRgb('--el-fill-color-lighter') || readCssVarRgb('--el-fill-color-light');
+      _playtimeColorsCache = { primary, base };
+      return _playtimeColorsCache;
+    }
+
+    function mixRgb(baseRgb, topRgb, t) {
+      const tt = Math.max(0, Math.min(1, Number(t) || 0));
+      const r = Math.round(baseRgb[0] + (topRgb[0] - baseRgb[0]) * tt);
+      const g = Math.round(baseRgb[1] + (topRgb[1] - baseRgb[1]) * tt);
+      const b = Math.round(baseRgb[2] + (topRgb[2] - baseRgb[2]) * tt);
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+
+    function computeMixPct(seconds, maxSeconds) {
+      const s = Number(seconds) || 0;
+      const max = Number(maxSeconds) || 0;
+      if (s <= 0) return 0;
+      if (max <= 0) return 100;
+      const r = Math.max(0, Math.min(1, s / max));
+      return Math.max(1, Math.round(r * 100));
+    }
+
+    const playtimeMonthBlocks = computed(() => {
+      const map = playtimeDaySecondsMap.value || {};
+      const keys = Object.keys(map).filter((k) => /^\d{4}-\d{2}-\d{2}$/.test(k));
+      if (!keys.length) return [];
+      keys.sort();
+
+      let globalMax = 0;
+      for (const k of keys) {
+        const s = Number(map[k]) || 0;
+        if (s > globalMax) globalMax = s;
+      }
+
+      const minDate = new Date(`${keys[0]}T00:00:00`);
+      const maxDate = new Date(`${keys[keys.length - 1]}T00:00:00`);
+      if (isNaN(minDate.getTime()) || isNaN(maxDate.getTime())) return [];
+
+      const blocks = [];
+      let y = minDate.getFullYear();
+      let m = minDate.getMonth() + 1;
+      const endY = maxDate.getFullYear();
+      const endM = maxDate.getMonth() + 1;
+
+      while (y < endY || (y === endY && m <= endM)) {
+        const dim = daysInMonth(y, m);
+        const first = new Date(`${ymdFromParts(y, m, 1)}T00:00:00`);
+        const offset = first.getDay(); // 0..6 (Sun..Sat)
+
+        const cells = [];
+        for (let i = 0; i < 42; i += 1) {
+          const dayNum = i - offset + 1;
+          if (dayNum < 1 || dayNum > dim) {
+            cells.push({
+              key: `${monthKey(y, m)}-pad-${i}`,
+              kind: 'pad',
+              title: '',
+              level: -1,
+            });
+            continue;
+          }
+          const dayKey = ymdFromParts(y, m, dayNum);
+          const seconds = Number(map[dayKey]) || 0;
+          const mixPct = computeMixPct(seconds, globalMax);
+          const durationText = seconds > 0 ? formatDurationSecondsDetailed(seconds) : '';
+          const title = seconds > 0 ? `${dayKey} ${durationText}` : `${dayKey} 无记录`;
+          cells.push({
+            key: `${monthKey(y, m)}-${dayKey}`,
+            kind: 'day',
+            dayKey,
+            seconds,
+            title,
+            mixPct,
+            durationText,
+          });
+        }
+
+        blocks.push({
+          key: monthKey(y, m),
+          title: monthTitle(y, m),
+          cells,
+        });
+
+        m += 1;
+        if (m > 12) {
+          m = 1;
+          y += 1;
+        }
+      }
+
+      return blocks;
+    });
+
+    function playtimeCellStyle(cell) {
+      const base = {
+        width: '14px',
+        height: '14px',
+        borderRadius: '3px',
+        boxSizing: 'border-box',
+      };
+      if (!cell || cell.kind === 'pad') {
+        return Object.assign({}, base, { background: 'transparent' });
+      }
+
+      const seconds = Number(cell.seconds) || 0;
+      if (seconds <= 0) {
+        return Object.assign({}, base, {
+          background: 'var(--el-fill-color-lighter)',
+          border: '1px solid var(--el-border-color-lighter)',
+        });
+      }
+
+      const colors = getPlaytimeThemeColors();
+      const pct = Math.max(0, Math.min(100, Number(cell.mixPct) || 0));
+      const t = pct / 100;
+      const bg = colors && colors.primary && colors.base ? mixRgb(colors.base, colors.primary, t) : 'var(--el-color-primary-light-7)';
+
+      return Object.assign({}, base, {
+        background: bg,
+        border: '1px solid var(--el-border-color-lighter)',
+        cursor: 'pointer',
+      });
+    }
+
     function isVanillaWorldKey(v) {
       const s = String(v || '').trim();
       return s === 'world' || s === 'world_nether' || s === 'world_the_end';
@@ -605,6 +810,175 @@ const app = createApp({
       }
     }
 
+    function openPlaytimeDialog() {
+      playtimeDialogVisible.value = true;
+      playtimeError.value = '';
+      playtimeSummaryText.value = '';
+      playtimeDaySecondsMap.value = {};
+      if (isLoggedIn.value) runPlaytimeQuery();
+      else ElementPlus.ElMessage.warning('请先登录');
+    }
+
+    function normalizeTsMs(v) {
+      const n = Number(v);
+      if (!Number.isFinite(n) || n <= 0) return null;
+      // heuristics: seconds vs milliseconds
+      if (n < 10_000_000_000) return n * 1000;
+      return n;
+    }
+
+    function ymdKeyFromMs(ms) {
+      const d = new Date(ms);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${dd}`;
+    }
+
+    function formatDurationSeconds(seconds) {
+      const n = Math.max(0, Math.floor(Number(seconds) || 0));
+      const totalMin = Math.floor(n / 60);
+      const h = Math.floor(totalMin / 60);
+      const m = totalMin % 60;
+      if (h <= 0) return `${m}分`;
+      return `${h}小时${m}分`;
+    }
+
+    function formatDurationSecondsDetailed(seconds) {
+      const n = Math.max(0, Math.floor(Number(seconds) || 0));
+      const h = Math.floor(n / 3600);
+      const m = Math.floor((n % 3600) / 60);
+      const s = n % 60;
+      if (h <= 0 && m <= 0) return `${s}秒`;
+      if (h <= 0) return `${m}分${s}秒`;
+      return `${h}小时${m}分${s}秒`;
+    }
+
+    function ymdDashedFromCompact(yyyymmdd) {
+      const s = String(yyyymmdd || '').trim();
+      if (!/^\d{8}$/.test(s)) return '';
+      return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+    }
+
+    function playtimeDayText(day) {
+      try {
+        const key = String(day || '').slice(0, 10);
+        const sec = Number(playtimeDaySecondsMap.value && playtimeDaySecondsMap.value[key]);
+        if (!Number.isFinite(sec) || sec <= 0) return '';
+        return formatDurationSeconds(sec);
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function addDurationByDay(map, startMs, endMs) {
+      let s = startMs;
+      const e = endMs;
+      while (s < e) {
+        const d = new Date(s);
+        const next = new Date(d);
+        next.setHours(24, 0, 0, 0);
+        const chunkEnd = Math.min(e, next.getTime());
+        const key = ymdKeyFromMs(s);
+        map[key] = (map[key] || 0) + (chunkEnd - s);
+        s = chunkEnd;
+      }
+    }
+
+    function isJoinEvent(ev) {
+      const s = String(ev || '').trim().toLowerCase();
+      return s === 'join' || s === 'login' || s === 'enter' || s.includes('join') || s.includes('login');
+    }
+
+    function isQuitEvent(ev) {
+      const s = String(ev || '').trim().toLowerCase();
+      return s === 'quit' || s === 'logout' || s === 'leave' || s.includes('quit') || s.includes('logout');
+    }
+
+    async function runPlaytimeQuery() {
+      if (playtimeLoading.value) return;
+      playtimeLoading.value = true;
+      playtimeError.value = '';
+      playtimeSummaryText.value = '';
+      playtimeDaySecondsMap.value = {};
+      try {
+        const res = await safeFetch(`${apiBase.value}/activity/getPlayerOnlineRecords`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+
+        if (!res.ok) {
+          const txt = await res.text().catch(() => '');
+          throw new Error(txt || `HTTP ${res.status}`);
+        }
+
+        const payload = await res.json().catch(() => null);
+        const data = payload && (payload.data || payload.items || payload.list);
+
+        // New API: { YYYYMMDD: seconds }
+        if (data && typeof data === 'object' && !Array.isArray(data)) {
+          const map = {};
+          let totalSeconds = 0;
+          let days = 0;
+          for (const [k, v] of Object.entries(data)) {
+            const key = ymdDashedFromCompact(k);
+            const sec = Number(v);
+            if (!key || !Number.isFinite(sec) || sec <= 0) continue;
+            map[key] = Math.floor(sec);
+            totalSeconds += Math.floor(sec);
+            days += 1;
+          }
+          playtimeDaySecondsMap.value = map;
+          playtimeSummaryText.value = days ? `总计 ${formatDurationSeconds(totalSeconds)}，有效天数 ${days}` : '';
+
+          return;
+        }
+
+        // Backward-compat: array join/quit records
+        const list = Array.isArray(data) ? data : [];
+        const rows = list
+          .map((r) => {
+            const ts = normalizeTsMs(r && (r.timestamp ?? r.time ?? r.ts));
+            return { ts, event: r && (r.event_type ?? r.eventType ?? r.event) };
+          })
+          .filter((r) => r.ts);
+        rows.sort((a, b) => a.ts - b.ts);
+
+        const durationByDay = {};
+        let lastJoin = null;
+        for (const r of rows) {
+          if (isJoinEvent(r.event)) {
+            lastJoin = r.ts;
+            continue;
+          }
+          if (isQuitEvent(r.event)) {
+            if (lastJoin && r.ts > lastJoin) {
+              const dur = r.ts - lastJoin;
+              if (dur > 0 && dur < 3 * 24 * 60 * 60 * 1000) {
+                addDurationByDay(durationByDay, lastJoin, r.ts);
+              }
+            }
+            lastJoin = null;
+          }
+        }
+        const map = {};
+        let totalSeconds = 0;
+        for (const [k, ms] of Object.entries(durationByDay)) {
+          const sec = Math.floor((Number(ms) || 0) / 1000);
+          if (sec <= 0) continue;
+          map[k] = sec;
+          totalSeconds += sec;
+        }
+        playtimeDaySecondsMap.value = map;
+        playtimeSummaryText.value = Object.keys(map).length ? `总计 ${formatDurationSeconds(totalSeconds)}，有效天数 ${Object.keys(map).length}` : '';
+      } catch (e) {
+        playtimeError.value = e && e.message ? e.message : String(e);
+      } finally {
+        playtimeLoading.value = false;
+      }
+    }
+
     function onNav(key) {
       if (key === 'chat') window.location.href = '/chat.html';
       else if (key === 'players') window.location.href = '/players.html';
@@ -682,6 +1056,14 @@ const app = createApp({
       homeWorldFilter,
       filteredHomes,
 
+      playtimeDialogVisible,
+      playtimeLoading,
+      playtimeError,
+      playtimeSummaryText,
+      playtimeHasAny,
+      playtimeMonthBlocks,
+      playtimeCellStyle,
+
       // actions
       onNav,
       gotoLogin,
@@ -698,6 +1080,9 @@ const app = createApp({
 
       openHomeDialog,
       runHomeQuery,
+
+      openPlaytimeDialog,
+      runPlaytimeQuery,
     };
   },
 });

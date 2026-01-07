@@ -19,6 +19,12 @@
       .nav-item.active{color:#409eff}
       .action-row{display:flex;gap:8px}
       .action-row .el-button{flex:1;min-width:0}
+      .playtime-months{display:grid;grid-template-columns:repeat(auto-fit, 260px);gap:12px;justify-content:center;align-items:start}
+      .playtime-month-card{width:260px}
+      .playtime-month-title{font-weight:600;text-align:center;margin-bottom:6px}
+      .playtime-dow{display:grid;grid-template-columns:repeat(7, 14px);gap:4px;justify-content:center;font-size:12px;color:#666;margin-bottom:6px}
+      .playtime-dow > div{text-align:center;line-height:14px;height:14px}
+      .playtime-cells{display:grid;grid-template-columns:repeat(7, 14px);grid-auto-rows:14px;gap:4px;justify-content:center}
     </style>
   </head>
   <body>
@@ -129,6 +135,10 @@
                 <el-icon style="margin-right:4px"><list /></el-icon>
                 材料列表管理
               </el-button>
+              <el-button plain @click="openPlaytimeDialog">
+                <el-icon style="margin-right:4px"><stopwatch /></el-icon>
+                游玩时长记录
+              </el-button>
             </div>
           </div>
         </el-card>
@@ -177,6 +187,50 @@
               <el-table-column prop="ip" label="IP" min-width="110"></el-table-column>
             </el-table>
           </div>
+        </el-dialog>
+
+        <el-dialog v-model="playtimeDialogVisible" title="游玩时长记录" width="92%" top="10vh">
+          <el-alert v-if="!isLoggedIn" type="warning" :closable="false" show-icon title="需要登录后才能查询"></el-alert>
+
+          <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <el-button plain :loading="playtimeLoading" :disabled="!isLoggedIn || playtimeLoading" @click="runPlaytimeQuery">刷新</el-button>
+            <span style="font-size:12px;color:#888" v-if="playtimeLoading">加载中…</span>
+            <span style="font-size:12px;color:#888" v-else-if="playtimeSummaryText">{{ playtimeSummaryText }}</span>
+          </div>
+
+          <div style="margin-top:12px" v-if="playtimeError">
+            <el-alert type="error" :closable="false" show-icon title="查询失败"></el-alert>
+            <div style="margin-top:8px;font-size:12px;color:#666;word-break:break-all">{{ playtimeError }}</div>
+          </div>
+
+          <div style="margin-top:12px" v-if="playtimeHasAny">
+            <div class="playtime-months">
+              <el-card v-for="m in playtimeMonthBlocks" :key="m.key" class="playtime-month-card" :body-style="{ padding: '8px' }">
+                <div class="playtime-month-title">{{ m.title }}</div>
+                <div class="playtime-dow">
+                  <div v-for="w in ['日','一','二','三','四','五','六']" :key="w">{{ w }}</div>
+                </div>
+                <div class="playtime-cells">
+                  <template v-for="cell in m.cells" :key="cell.key">
+                    <div v-if="cell.kind === 'pad'" :style="playtimeCellStyle(cell)"></div>
+                    <el-popover v-else placement="top" trigger="click" :teleported="false">
+                      <template #reference>
+                        <div :style="playtimeCellStyle(cell)"></div>
+                      </template>
+                      <div style="font-size:12px;line-height:1.6">
+                        <div style="font-weight:600">{{ cell.dayKey }}</div>
+                        <div v-if="cell.seconds > 0">在线时长：{{ cell.durationText }}（{{ cell.seconds }}秒）</div>
+                        <div v-else>无记录</div>
+                      </div>
+                    </el-popover>
+                  </template>
+                </div>
+              </el-card>
+            </div>
+            <div style="margin-top:8px;font-size:12px;color:#888">统计范围：最近 365 天（按每天在线秒数统计）</div>
+          </div>
+
+          <div style="margin-top:12px;font-size:12px;color:#888" v-else-if="!playtimeLoading && isLoggedIn">暂无游玩记录</div>
         </el-dialog>
 
         <el-dialog v-model="homeDialogVisible" title="Home查询" width="92%" top="10vh">
