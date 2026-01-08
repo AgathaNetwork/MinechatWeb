@@ -46,9 +46,6 @@
             </el-menu>
           </div>
           <div style="display:flex;align-items:center;gap:8px">
-            <el-button v-if="!isLoggedIn" size="small" type="primary" @click="openLoginPopup">使用 Microsoft 登录</el-button>
-            <el-button v-else size="small" @click="logout">登出</el-button>
-            <el-avatar v-if="isLoggedIn && selfFaceUrl" shape="square" :src="selfFaceUrl" :size="28" @click="onNav('me')" style="cursor:pointer"></el-avatar>
           </div>
         </el-header>
 
