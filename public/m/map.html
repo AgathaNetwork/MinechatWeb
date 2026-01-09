@@ -48,7 +48,7 @@
 
       <div class="content">
         <div class="frame-wrap">
-          <iframe :src="frameSrc" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
+          <iframe ref="mapFrame" :src="frameSrc" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
         </div>
       </div>
 
@@ -143,7 +143,60 @@
               return 'https://map.agatha.org.cn/';
             }
           },
+          extractHashFromAnyUrl(urlLike) {
+            try {
+              const s = String(urlLike || '').trim();
+              if (!s) return '';
+              const idx = s.indexOf('#');
+              if (idx < 0) return '';
+              return s.slice(idx + 1);
+            } catch (e) {
+              return '';
+            }
+          },
+          tryGetIframeUrl() {
+            try {
+              const el = this.$refs && this.$refs.mapFrame ? this.$refs.mapFrame : null;
+              if (!el) return '';
+              try {
+                const href = el.contentWindow && el.contentWindow.location ? String(el.contentWindow.location.href || '') : '';
+                if (href) return href;
+              } catch (e) {}
+              try {
+                return String(el.src || '');
+              } catch (e2) {
+                return '';
+              }
+            } catch (e3) {
+              return '';
+            }
+          },
           parseCoordsFromCurrentUrl() {
+            // 1) Prefer extracting from iframe URL/hash (supports switching world URL format)
+            try {
+              const iframeUrl = this.tryGetIframeUrl();
+              const iframeHash = this.extractHashFromAnyUrl(iframeUrl);
+              const h = iframeHash ? iframeHash.replace(/^#/, '') : '';
+              if (h) {
+                const parts = h.split(':');
+                if (parts && parts.length >= 4) {
+                  const dimension = decodeURIComponent(parts[0] || '');
+                  const x = Number(decodeURIComponent(parts[1] || ''));
+                  const y = Number(decodeURIComponent(parts[2] || ''));
+                  const z = Number(decodeURIComponent(parts[3] || ''));
+                  if (dimension && Number.isFinite(x) && Number.isFinite(z)) {
+                    return {
+                      dimension,
+                      x: Math.round(x),
+                      y: Number.isFinite(y) ? Math.round(y) : 0,
+                      z: Math.round(z),
+                    };
+                  }
+                }
+              }
+            } catch (e) {}
+
+            // 2) Fallback: wrapper page query params
             try {
               const sp = new URLSearchParams(window.location.search || '');
               const world = String(sp.get('world') || '').trim();
@@ -160,6 +213,7 @@
               }
             } catch (e) {}
 
+            // 3) Fallback: explicit hash param
             try {
               const sp = new URLSearchParams(window.location.search || '');
               const rawHash = String(sp.get('hash') || '').trim();

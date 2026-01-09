@@ -11,30 +11,6 @@
     <style>
       [v-cloak]{display:none}
       html, body { height: 100%; margin: 0; overflow: hidden; background: var(--mc-body-bg); }
-      .top-bar {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 52px;
-        background: var(--mc-surface);
-        border-bottom: 1px solid var(--mc-border);
-        z-index: 10;
-        display:flex;
-        align-items:center;
-        gap:0;
-        padding:0 12px;
-        box-sizing:border-box;
-      }
-      .content {
-        position: fixed;
-        top: 52px;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        padding: 12px;
-        box-sizing: border-box;
-      }
       .frame-wrap {
         width: 100%;
         height: 100%;
@@ -48,18 +24,30 @@
   </head>
   <body>
     <div id="app" v-cloak>
-      <div class="top-bar">
-        <el-button @click="goBack" size="small">返回</el-button>
-        <el-button @click="openShare" circle size="small" title="分享" style="margin-left:4px">
-          <el-icon><share /></el-icon>
-        </el-button>
-        <div style="flex:1;font-weight:600;margin-left:16px">大地图</div>
-      </div>
-      <div class="content">
-        <div class="frame-wrap">
-          <iframe :src="frameSrc" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
-        </div>
-      </div>
+      <el-container style="height:100vh">
+        <el-header style="display:flex;align-items:center;justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:16px">
+            <div style="display:flex;align-items:center;gap:6px">
+              <h2 style="margin:0">大地图</h2>
+              <el-button @click="openShare" circle size="small" title="分享">
+                <el-icon><share /></el-icon>
+              </el-button>
+            </div>
+            <el-menu mode="horizontal" :ellipsis="false" default-active="" @select="onNav" style="border-bottom:none;background:transparent">
+              <el-menu-item index="chat">会话</el-menu-item>
+              <el-menu-item index="players">玩家</el-menu-item>
+              <el-menu-item index="gallery">相册</el-menu-item>
+              <el-menu-item index="me">工作台</el-menu-item>
+            </el-menu>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px"></div>
+        </el-header>
+        <el-main style="padding:12px">
+          <div class="frame-wrap">
+            <iframe ref="mapFrame" :src="frameSrc" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
+          </div>
+        </el-main>
+      </el-container>
 
       <el-dialog v-model="shareDialogVisible" title="分享坐标" width="520px" :close-on-click-modal="false">
         <div style="display:flex;flex-direction:column;gap:10px">
@@ -147,7 +135,59 @@
               return 'https://map.agatha.org.cn/';
             }
           },
+          extractHashFromAnyUrl(urlLike) {
+            try {
+              const s = String(urlLike || '').trim();
+              if (!s) return '';
+              const idx = s.indexOf('#');
+              if (idx < 0) return '';
+              return s.slice(idx + 1);
+            } catch (e) {
+              return '';
+            }
+          },
+          tryGetIframeUrl() {
+            // Cross-origin: contentWindow.location is usually not accessible.
+            // Best-effort: use iframe.src attribute as a fallback.
+            try {
+              const el = this.$refs && this.$refs.mapFrame ? this.$refs.mapFrame : null;
+              if (!el) return '';
+              try {
+                // may throw on cross-origin
+                const href = el.contentWindow && el.contentWindow.location ? String(el.contentWindow.location.href || '') : '';
+                if (href) return href;
+              } catch (e) {}
+              try {
+                const src = String(el.src || '');
+                return src;
+              } catch (e2) {
+                return '';
+              }
+            } catch (e3) {
+              return '';
+            }
+          },
           parseCoordsFromCurrentUrl() {
+            // 1) Prefer extracting from iframe URL/hash (supports switching world URL format)
+            try {
+              const iframeUrl = this.tryGetIframeUrl();
+              const iframeHash = this.extractHashFromAnyUrl(iframeUrl);
+              const h = iframeHash ? iframeHash.replace(/^#/, '') : '';
+              if (h) {
+                const parts = h.split(':');
+                if (parts && parts.length >= 4) {
+                  const dimension = decodeURIComponent(parts[0] || '');
+                  const x = Number(decodeURIComponent(parts[1] || ''));
+                  const y = Number(decodeURIComponent(parts[2] || ''));
+                  const z = Number(decodeURIComponent(parts[3] || ''));
+                  if (dimension && Number.isFinite(x) && Number.isFinite(z)) {
+                    return { dimension, x: Math.round(x), y: Number.isFinite(y) ? Math.round(y) : 0, z: Math.round(z) };
+                  }
+                }
+              }
+            } catch (e) {}
+
+            // 2) Fallback: wrapper page query params
             try {
               const sp = new URLSearchParams(window.location.search || '');
               const world = String(sp.get('world') || '').trim();
@@ -159,6 +199,7 @@
               }
             } catch (e) {}
 
+            // 3) Fallback: explicit hash param
             try {
               const sp = new URLSearchParams(window.location.search || '');
               const rawHash = String(sp.get('hash') || '').trim();
@@ -263,14 +304,11 @@
               this.shareSending = false;
             }
           },
-          goBack() {
-            try {
-              if (window.history && window.history.length > 1) {
-                window.history.back();
-                return;
-              }
-            } catch (e) {}
-            window.location.href = '/me.html';
+          onNav(key) {
+            if (key === 'chat') window.location.href = '/chat.html';
+            else if (key === 'gallery') window.location.href = '/gallery.html';
+            else if (key === 'players') window.location.href = '/players.html';
+            else if (key === 'me') window.location.href = '/me.html';
           },
         },
       });
