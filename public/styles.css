@@ -51,3 +51,9 @@ html.dark [style*="background:#f6f8fa"],html.dark [style*="background: #f6f8fa"]
 html.dark [style*="background:#eef6ff"],html.dark [style*="background: #eef6ff"]{background:var(--mc-active-bg) !important}
 
 html.dark [style*="#e6e6e6"],html.dark [style*="#eee"],html.dark [style*="#ddd"],html.dark [style*="#dcdfe6"]{border-color:var(--mc-border) !important}
+
+/* Mobile: avoid status-bar overlap for top toasts/notifications (Element Plus)
+	Pages that reserve a 4vh status-bar spacer include a `.top-spacer` element.
+	Element Plus appends messages to <body>, so sibling selector is reliable here. */
+.top-spacer ~ .el-message{top:calc(4vh + 16px) !important}
+.top-spacer ~ .el-notification{top:calc(4vh + 16px) !important}
