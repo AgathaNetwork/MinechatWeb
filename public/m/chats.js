@@ -743,6 +743,22 @@ const app = createApp({
       }
       if (msg.type === 'emoji') return '[表情]';
       if (msg.type === 'file') return '[文件]';
+      if (String(msg.type || '').toLowerCase() === 'coordinate') {
+        try {
+          const c = content && typeof content === 'object' ? content : null;
+          const name = c && c.name ? String(c.name) : '';
+          const dimRaw = c && c.dimension ? String(c.dimension) : '';
+          const dim = dimRaw === 'world' ? '主世界' : dimRaw === 'world_nether' ? '下界' : dimRaw === 'world_the_end' ? '末地' : dimRaw;
+          const x = c ? c.x : '';
+          const y = c ? c.y : '';
+          const z = c ? c.z : '';
+          const desc = c && c.description ? String(c.description) : '';
+          const s = `[坐标] ${name}${dim ? ' (' + dim + ')' : ''} ${x},${y},${z}${desc ? ' - ' + desc : ''}`.trim();
+          return s.length > 20 ? s.substring(0, 20) + '...' : s;
+        } catch (e) {
+          return '[坐标]';
+        }
+      }
       return '';
     }
 
@@ -779,6 +795,11 @@ const app = createApp({
           const name =
             (m.content && typeof m.content === 'object' && (m.content.name || m.content.username || m.content.displayName)) || '';
           return { tag: '名片', suffix: name ? String(name) : '' };
+        }
+
+        if (t === 'coordinate') {
+          const name = (m.content && typeof m.content === 'object' && m.content.name) ? String(m.content.name) : '';
+          return { tag: '坐标', suffix: name ? String(name) : '' };
         }
 
         return { tag: '', suffix: '' };

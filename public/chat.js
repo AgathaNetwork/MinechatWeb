@@ -119,6 +119,18 @@ const app = createApp({
     const playerCardSelectedUserId = ref('');
     const playerCardQuery = ref('');
 
+    // Coordinate message
+    const coordinateDialogVisible = ref(false);
+    const coordinateSending = ref(false);
+    const coordinateForm = reactive({
+      name: '',
+      dimension: 'world',
+      x: '',
+      y: '',
+      z: '',
+      description: '',
+    });
+
     function playerCardNoDataText() {
       const q = String(playerCardQuery.value || '').trim();
       return q ? '没有匹配的玩家（最多显示 5 条）' : '请输入关键词搜索（最多显示 5 条）';
@@ -2539,6 +2551,11 @@ const app = createApp({
           return { tag: '名片', suffix: name, text: '' };
         }
 
+        if (t === 'coordinate') {
+          const name = m.content && m.content.name !== undefined && m.content.name !== null ? String(m.content.name) : '';
+          return { tag: '坐标', suffix: name, text: '' };
+        }
+
         const txt = messageTextPreview(m);
         const str = txt ? String(txt) : '';
         return { tag: '', suffix: '', text: str };
@@ -3358,6 +3375,28 @@ const app = createApp({
     function messageTextPreview(m) {
       if (!m) return '';
       if (isRecalledMessage(m)) return '[消息已撤回]';
+      if (String(m.type || '').toLowerCase() === 'coordinate') {
+        try {
+          const c = m.content && typeof m.content === 'object' ? m.content : null;
+          if (!c) return '[坐标]';
+          const name = c.name !== undefined && c.name !== null ? String(c.name).trim() : '';
+          const dimRaw = c.dimension !== undefined && c.dimension !== null ? String(c.dimension).trim() : '';
+          const dim = dimRaw === 'world' ? '主世界' : dimRaw === 'world_nether' ? '下界' : dimRaw === 'world_the_end' ? '末地' : dimRaw;
+          const x = Number(c.x);
+          const y = Number(c.y);
+          const z = Number(c.z);
+          const xyzOk = Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z);
+          let s = '[坐标]';
+          if (name) s += ' ' + name;
+          if (dim) s += ` (${dim})`;
+          if (xyzOk) s += ` ${x},${y},${z}`;
+          const desc = c.description !== undefined && c.description !== null ? String(c.description).trim() : '';
+          if (desc) s += ' - ' + desc;
+          return s;
+        } catch (e) {
+          return '[坐标]';
+        }
+      }
       if (m.type === 'emoji' && m.content) {
         const fn = (m.content && m.content.filename) ? String(m.content.filename) : '';
         return fn ? '[表情] ' + fn : '[表情]';
@@ -4378,6 +4417,10 @@ const app = createApp({
         mentionQuery.value = '';
         pendingMentions.value = [];
         pendingMentionAll.value = false;
+
+        coordinateDialogVisible.value = false;
+        coordinateSending.value = false;
+        resetCoordinateForm();
       });
     } catch (e) {}
 
@@ -4474,6 +4517,155 @@ const app = createApp({
       if (isGlobalChat.value) return;
       morePanelVisible.value = !morePanelVisible.value;
       if (morePanelVisible.value) emojiPanelVisible.value = false;
+    }
+
+    function resetCoordinateForm() {
+      try {
+        coordinateForm.name = '';
+        coordinateForm.dimension = 'world';
+        coordinateForm.x = '';
+        coordinateForm.y = '';
+        coordinateForm.z = '';
+        coordinateForm.description = '';
+      } catch (e) {}
+    }
+
+    async function openCoordinateDialog() {
+      try {
+        if (!currentChatId.value) {
+          try { ElementPlus.ElMessage.warning('先选择会话'); } catch (e0) {}
+          return;
+        }
+        if (isGlobalChat.value) {
+          try { ElementPlus.ElMessage.warning('全服聊天不支持坐标'); } catch (e1) {}
+          return;
+        }
+        morePanelVisible.value = false;
+        resetCoordinateForm();
+        coordinateDialogVisible.value = true;
+      } catch (e) {}
+    }
+
+    function cancelCoordinateDialog() {
+      coordinateDialogVisible.value = false;
+      coordinateSending.value = false;
+      resetCoordinateForm();
+    }
+
+    function parseFiniteNumberInput(v) {
+      try {
+        if (v === undefined || v === null) return NaN;
+        const s = String(v).trim();
+        if (!s) return NaN;
+        if (!/^-?\d+$/.test(s)) return NaN;
+        const n = Number.parseInt(s, 10);
+        return Number.isFinite(n) ? n : NaN;
+      } catch (e) {
+        return NaN;
+      }
+    }
+
+    async function confirmSendCoordinate() {
+      if (coordinateSending.value) return;
+      try {
+        if (!currentChatId.value) {
+          try { ElementPlus.ElMessage.warning('先选择会话'); } catch (e0) {}
+          return;
+        }
+        if (isGlobalChat.value) {
+          try { ElementPlus.ElMessage.warning('全服聊天不支持坐标'); } catch (e1) {}
+          return;
+        }
+
+        const name = String(coordinateForm.name || '').trim();
+        const dimension = String(coordinateForm.dimension || '').trim();
+        const x = parseFiniteNumberInput(coordinateForm.x);
+        const y = parseFiniteNumberInput(coordinateForm.y);
+        const z = parseFiniteNumberInput(coordinateForm.z);
+        const descriptionRaw = String(coordinateForm.description || '').trim();
+        const description = descriptionRaw ? descriptionRaw : null;
+
+        if (!name) {
+          try { ElementPlus.ElMessage.warning('请输入坐标点名称'); } catch (e2) {}
+          return;
+        }
+        if (!dimension) {
+          try { ElementPlus.ElMessage.warning('请输入维度'); } catch (e3) {}
+          return;
+        }
+
+        const allowedDims = new Set(['world', 'world_nether', 'world_the_end']);
+        if (!allowedDims.has(dimension)) {
+          try { ElementPlus.ElMessage.warning('请选择维度（主世界/下界/末地）'); } catch (e3b) {}
+          return;
+        }
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+          try { ElementPlus.ElMessage.warning('请输入有效的 XYZ 整数'); } catch (e4) {}
+          return;
+        }
+
+        coordinateSending.value = true;
+
+        const tempId = `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const optimisticMsg = {
+          id: tempId,
+          type: 'coordinate',
+          content: { name, dimension, x, y, z, description },
+          from_user: selfUserId.value || '__me__',
+          createdAt: new Date().toISOString(),
+          __own: true,
+          __status: 'sending',
+        };
+
+        try {
+          if (!isGlobalChat.value && !isSelfChat.value) {
+            if (isGroupChat.value) optimisticMsg.readCount = 0;
+            else if (isDirectChat.value) optimisticMsg.read = false;
+          }
+        } catch (e5) {}
+
+        if (replyTarget.value) optimisticMsg.replied_to = replyTarget.value;
+        msgById[tempId] = optimisticMsg;
+        messages.value = messages.value.concat([optimisticMsg]);
+
+        // close modal early
+        coordinateDialogVisible.value = false;
+
+        await nextTick();
+        if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
+
+        const payload = { type: 'coordinate', content: { name, dimension, x, y, z, description } };
+        if (replyTarget.value) payload.repliedTo = replyTarget.value.id || replyTarget.value;
+
+        const res = await safeFetch(`${apiBase.value}/chats/${encodeURIComponent(currentChatId.value)}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error('发送失败');
+        const serverMsg = await res.json().catch(() => null);
+        ackOptimisticMessage(tempId, serverMsg, false);
+        clearReplyTarget();
+        resetCoordinateForm();
+      } catch (e) {
+        console.error(e);
+        try {
+          // best-effort: mark the latest pending coordinate as failed
+          const list = Array.isArray(messages.value) ? messages.value : [];
+          for (let i = list.length - 1; i >= 0; i--) {
+            const m = list[i];
+            if (m && m.__status === 'sending' && String(m.type || '').toLowerCase() === 'coordinate') {
+              m.__status = 'failed';
+              break;
+            }
+          }
+        } catch (e2) {}
+        try { ElementPlus.ElMessage.error('发送坐标失败'); } catch (e3) {}
+      } finally {
+        coordinateSending.value = false;
+        await nextTick();
+        if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
+      }
     }
 
     async function ensureAllUsersLoadedForPlayerCard() {
@@ -4821,6 +5013,10 @@ const app = createApp({
       playerCardQuery,
       playerCardOptions,
       playerCardNoDataText,
+
+      coordinateDialogVisible,
+      coordinateSending,
+      coordinateForm,
       fileInputEl,
       messagesEl,
       isGlobalChat,
@@ -4935,6 +5131,9 @@ const app = createApp({
       openPlayerCardDialog,
       cancelPlayerCardDialog,
       confirmSendPlayerCard,
+      openCoordinateDialog,
+      cancelCoordinateDialog,
+      confirmSendCoordinate,
       onPlayerCardQuery,
       openFilePicker,
       onFileSelected,

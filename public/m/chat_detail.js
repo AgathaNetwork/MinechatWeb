@@ -520,6 +520,18 @@ const app = createApp({
     const playerCardSending = ref(false);
     const playerCardSelectedUserId = ref('');
     const playerCardQuery = ref('');
+
+    const coordinateDialogVisible = ref(false);
+    const coordinateSending = ref(false);
+    const coordinateForm = reactive({
+      name: '',
+      dimension: 'world',
+      x: '',
+      y: '',
+      z: '',
+      description: '',
+    });
+
     const longPressTimer = ref(null);
     const longPressTarget = ref(null);
     const ctxMenuVisible = ref(false);
@@ -1883,6 +1895,24 @@ const app = createApp({
         const t = (m.content && (m.content.text !== undefined ? m.content.text : m.content)) || '';
         return String(t);
       }
+      if (String(m.type || '').toLowerCase() === 'coordinate') {
+        try {
+          const c = m.content && typeof m.content === 'object' ? m.content : null;
+          if (!c) return '[坐标]';
+          const name = String(c.name || '').trim();
+          const dimRaw = String(c.dimension || '').trim();
+          const dim = dimRaw === 'world' ? '主世界' : dimRaw === 'world_nether' ? '下界' : dimRaw === 'world_the_end' ? '末地' : dimRaw;
+          const x = c.x;
+          const y = c.y;
+          const z = c.z;
+          const desc = c.description !== undefined && c.description !== null ? String(c.description).trim() : '';
+          const head = `[坐标]${name ? ' ' + name : ''}${dim ? ' (' + dim + ')' : ''}`;
+          const xyz = `${x},${y},${z}`;
+          return head + ' ' + xyz + (desc ? ' - ' + desc : '');
+        } catch (e) {
+          return '[坐标]';
+        }
+      }
       return '';
     }
 
@@ -2042,6 +2072,11 @@ const app = createApp({
           const name =
             (m.content && typeof m.content === 'object' && (m.content.name || m.content.username || m.content.displayName)) || '';
           return { tag: '名片', suffix: name ? String(name) : '' };
+        }
+
+        if (t === 'coordinate') {
+          const name = (m.content && typeof m.content === 'object' && m.content.name) ? String(m.content.name) : '';
+          return { tag: '坐标', suffix: name ? String(name) : '' };
         }
 
         return { tag: '', suffix: '' };
@@ -3544,6 +3579,10 @@ const app = createApp({
         playerCardDialogVisible.value = false;
         playerCardSelectedUserId.value = '';
         playerCardQuery.value = '';
+
+        coordinateDialogVisible.value = false;
+        coordinateSending.value = false;
+        resetCoordinateForm();
       });
     } catch (e) {}
 
@@ -3777,6 +3816,146 @@ const app = createApp({
       }
     }
 
+    function resetCoordinateForm() {
+      try {
+        coordinateForm.name = '';
+        coordinateForm.dimension = 'world';
+        coordinateForm.x = '';
+        coordinateForm.y = '';
+        coordinateForm.z = '';
+        coordinateForm.description = '';
+      } catch (e) {}
+    }
+
+    function openCoordinateDialog() {
+      if (isGlobalChat.value) return;
+      if (!currentChatId.value) return;
+      morePanelVisible.value = false;
+      coordinateSending.value = false;
+      resetCoordinateForm();
+      coordinateDialogVisible.value = true;
+    }
+
+    function cancelCoordinateDialog() {
+      coordinateDialogVisible.value = false;
+      coordinateSending.value = false;
+      resetCoordinateForm();
+    }
+
+    function parseFiniteNumberInput(v) {
+      try {
+        if (typeof v === 'number') return Number.isFinite(v) && Number.isInteger(v) ? v : null;
+        const s = String(v ?? '').trim();
+        if (!s) return null;
+        if (!/^-?\d+$/.test(s)) return null;
+        const n = Number.parseInt(s, 10);
+        return Number.isFinite(n) ? n : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    async function confirmSendCoordinate() {
+      if (isGlobalChat.value) return;
+      if (!currentChatId.value) return;
+
+      const name = String(coordinateForm.name || '').trim();
+      const dimension = String(coordinateForm.dimension || '').trim();
+      const x = parseFiniteNumberInput(coordinateForm.x);
+      const y = parseFiniteNumberInput(coordinateForm.y);
+      const z = parseFiniteNumberInput(coordinateForm.z);
+      const descriptionRaw = String(coordinateForm.description || '').trim();
+      const description = descriptionRaw ? descriptionRaw : null;
+
+      if (!name) {
+        try { ElementPlus.ElMessage.warning('请输入坐标点名称'); } catch (e) {}
+        return;
+      }
+      if (!dimension) {
+        try { ElementPlus.ElMessage.warning('请输入维度'); } catch (e) {}
+        return;
+      }
+
+      try {
+        const allowedDims = new Set(['world', 'world_nether', 'world_the_end']);
+        if (!allowedDims.has(dimension)) {
+          try { ElementPlus.ElMessage.warning('请选择维度（主世界/下界/末地）'); } catch (e2) {}
+          return;
+        }
+      } catch (e) {}
+      if (x === null || y === null || z === null) {
+        try { ElementPlus.ElMessage.warning('请输入有效的 X / Y / Z 整数'); } catch (e) {}
+        return;
+      }
+
+      coordinateSending.value = true;
+      morePanelVisible.value = false;
+
+      const tempId = 'temp_coord_' + Date.now() + '_' + Math.random();
+      const content = { name, dimension, x, y, z, description };
+      const optimisticMsg = {
+        id: tempId,
+        type: 'coordinate',
+        content,
+        from_user: selfUserId.value,
+        created_at: new Date().toISOString(),
+        __status: 'sending',
+        __own: true,
+      };
+
+      // Ensure read UI can render immediately for newly sent messages.
+      try {
+        if (!isGlobalChat.value && !isSelfChat.value) {
+          if (isGroupChat.value) optimisticMsg.readCount = 0;
+          else if (isDirectChat.value) optimisticMsg.read = false;
+        }
+      } catch (e) {}
+
+      if (replyTarget.value && !isGlobalChat.value) {
+        optimisticMsg.replied_to = replyTarget.value.id;
+      }
+
+      msgById[tempId] = optimisticMsg;
+      messages.value.push(optimisticMsg);
+
+      coordinateDialogVisible.value = false;
+      resetCoordinateForm();
+      clearReplyTarget();
+
+      await nextTick();
+      try {
+        if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
+      } catch (e) {}
+
+      try {
+        const url = `${apiBase.value}/chats/${encodeURIComponent(currentChatId.value)}/messages`;
+        const body = { type: 'coordinate', content };
+        if (optimisticMsg.replied_to) body.repliedTo = optimisticMsg.replied_to;
+
+        const res = await safeFetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (res && res.ok) {
+          const serverMsg = await res.json().catch(() => null);
+          ackOptimisticMessage(tempId, serverMsg, false);
+        } else {
+          optimisticMsg.__status = 'failed';
+          try { ElementPlus.ElMessage.error('发送坐标失败'); } catch (e) {}
+        }
+      } catch (e) {
+        optimisticMsg.__status = 'failed';
+        try { ElementPlus.ElMessage.error('发送坐标失败'); } catch (e2) {}
+      } finally {
+        coordinateSending.value = false;
+        await nextTick();
+        try {
+          if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
+        } catch (e) {}
+      }
+    }
+
     async function loadEmojiPacks() {
       try {
         const res = await safeFetch(`${apiBase.value}/emoji`);
@@ -3903,6 +4082,13 @@ const app = createApp({
       openPlayerCardDialog,
       cancelPlayerCardDialog,
       confirmSendPlayerCard,
+
+      coordinateDialogVisible,
+      coordinateSending,
+      coordinateForm,
+      openCoordinateDialog,
+      cancelCoordinateDialog,
+      confirmSendCoordinate,
       // group management
       isGroupChat,
       isDirectChat,

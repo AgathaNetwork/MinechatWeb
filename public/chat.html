@@ -232,6 +232,16 @@
                           </div>
                         </div>
                       </template>
+                      <template v-else-if="m.type==='coordinate' && m.content">
+                        <div style="min-width:200px;max-width:300px">
+                          <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ m.content.name || '坐标点' }}</div>
+                          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+                            <el-tag type="info" effect="plain" size="small">{{ m.content.dimension==='world' ? '主世界' : (m.content.dimension==='world_nether' ? '下界' : (m.content.dimension==='world_the_end' ? '末地' : (m.content.dimension || '-'))) }}</el-tag>
+                            <span style="font-size:12px;color:var(--mc-text-regular)">XYZ: {{ m.content.x }}, {{ m.content.y }}, {{ m.content.z }}</span>
+                          </div>
+                          <div v-if="m.content.description" style="font-size:12px;color:var(--mc-text-regular);margin-top:6px;white-space:pre-wrap;word-break:break-word">{{ m.content.description }}</div>
+                        </div>
+                      </template>
                       <template v-else-if="m.type==='file' && m.content && isImageFile(m)">
                         <img :src="fileDisplayUrl(m)" :alt="m.content.filename || 'image'" style="max-width:320px;max-height:240px;display:block;border-radius:8px;cursor:pointer" @click.stop="openImagePreview(fileOriginalUrl(m))" />
                         <div v-if="m.content.filename" style="margin-top:6px;font-size:12px;color:var(--mc-text-regular)">{{ messageFilename(m) }}</div>
@@ -396,7 +406,12 @@
                   <strong>更多</strong>
                 </div>
                 <div style="display:flex;flex-direction:column;gap:6px">
-                  <el-button type="default" plain style="justify-content:flex-start" @click="openPlayerCardDialog">玩家名片</el-button>
+                  <div>
+                    <el-button type="default" plain style="width:100%;justify-content:flex-start" @click="openPlayerCardDialog">玩家名片</el-button>
+                  </div>
+                  <div>
+                    <el-button type="default" plain style="width:100%;justify-content:flex-start" @click="openCoordinateDialog">坐标</el-button>
+                  </div>
                 </div>
               </div>
 
@@ -427,6 +442,40 @@
                 <template #footer>
                   <el-button @click="cancelPlayerCardDialog">取消</el-button>
                   <el-button type="primary" :loading="playerCardSending" @click="confirmSendPlayerCard">发送</el-button>
+                </template>
+              </el-dialog>
+
+              <el-dialog
+                v-model="coordinateDialogVisible"
+                title="发送坐标"
+                width="420px"
+                :close-on-click-modal="false"
+                @close="cancelCoordinateDialog"
+              >
+                <div style="display:flex;flex-direction:column;gap:10px">
+                  <el-input v-model="coordinateForm.name" placeholder="坐标点名称"></el-input>
+                  <el-select v-model="coordinateForm.dimension" placeholder="选择维度" style="width:100%">
+                    <el-option label="主世界" value="world"></el-option>
+                    <el-option label="下界" value="world_nether"></el-option>
+                    <el-option label="末地" value="world_the_end"></el-option>
+                  </el-select>
+                  <div style="display:flex;gap:8px;width:100%">
+                    <div style="flex:1;min-width:0">
+                      <el-input v-model="coordinateForm.x" placeholder="X" inputmode="numeric" pattern="-?\d*"></el-input>
+                    </div>
+                    <div style="flex:1;min-width:0">
+                      <el-input v-model="coordinateForm.y" placeholder="Y" inputmode="numeric" pattern="-?\d*"></el-input>
+                    </div>
+                    <div style="flex:1;min-width:0">
+                      <el-input v-model="coordinateForm.z" placeholder="Z" inputmode="numeric" pattern="-?\d*"></el-input>
+                    </div>
+                  </div>
+                  <el-input v-model="coordinateForm.description" type="textarea" :rows="3" placeholder="描述（可选）"></el-input>
+                </div>
+
+                <template #footer>
+                  <el-button @click="cancelCoordinateDialog">取消</el-button>
+                  <el-button type="primary" :loading="coordinateSending" @click="confirmSendCoordinate">发送</el-button>
                 </template>
               </el-dialog>
             </div>
