@@ -335,6 +335,9 @@ const app = createApp({
     const imagePreviewDragging = ref(false);
     const imagePreviewMoved = ref(false);
 
+    const videoPreviewVisible = ref(false);
+    const videoPreviewUrl = ref('');
+
     let imgDragStartX = 0;
     let imgDragStartY = 0;
     let imgDragOriginX = 0;
@@ -2583,6 +2586,11 @@ const app = createApp({
           return { tag, suffix: fn, text: '' };
         }
 
+        if (t === 'video') {
+          const fn = m.content && m.content.filename ? displayFilename(m.content.filename) : '';
+          return { tag: '视频', suffix: fn, text: '' };
+        }
+
         if (t === 'player_card' || t === 'playercard' || t === 'card') {
           const name = m.content && (m.content.name || m.content.username) ? String(m.content.name || m.content.username) : '';
           return { tag: '名片', suffix: name, text: '' };
@@ -3756,6 +3764,28 @@ const app = createApp({
         imagePreviewY.value = 0;
         imagePreviewDragging.value = false;
         imagePreviewMoved.value = false;
+      } catch (e) {}
+    }
+
+    function openVideoPreview(url) {
+      try {
+        const u = String(url || '').trim();
+        if (!u) return;
+        videoPreviewUrl.value = u;
+        videoPreviewVisible.value = true;
+      } catch (e) {}
+    }
+
+    function closeVideoPreview() {
+      try {
+        videoPreviewVisible.value = false;
+        videoPreviewUrl.value = '';
+      } catch (e) {}
+    }
+
+    function requestCloseVideoPreview() {
+      try {
+        closeVideoPreview();
       } catch (e) {}
     }
 
@@ -5250,6 +5280,11 @@ const app = createApp({
       openImagePreview,
       closeImagePreview,
       requestCloseImagePreview,
+      videoPreviewVisible,
+      videoPreviewUrl,
+      openVideoPreview,
+      closeVideoPreview,
+      requestCloseVideoPreview,
       onImagePreviewToggle,
       onImagePreviewWheel,
       onImagePreviewMouseDown,

@@ -144,6 +144,9 @@ const app = createApp({
     const imagePreviewY = ref(0);
     const imagePreviewMoved = ref(false);
 
+    const videoPreviewVisible = ref(false);
+    const videoPreviewUrl = ref('');
+
     let imgDragActive = false;
     let imgDragStartX = 0;
     let imgDragStartY = 0;
@@ -2073,6 +2076,11 @@ const app = createApp({
           return { tag, suffix: fn };
         }
 
+        if (t === 'video') {
+          const fn = m.content && m.content.filename ? displayFilename(m.content.filename) : '';
+          return { tag: '视频', suffix: fn };
+        }
+
         if (t === 'player_card') {
           const name =
             (m.content && typeof m.content === 'object' && (m.content.name || m.content.username || m.content.displayName)) || '';
@@ -2605,6 +2613,30 @@ const app = createApp({
         imagePreviewX.value = 0;
         imagePreviewY.value = 0;
         imagePreviewMoved.value = false;
+      } catch (e) {}
+    }
+
+    function openVideoPreview(url) {
+      try {
+        const u = String(url || '').trim();
+        if (!u) return;
+        videoPreviewUrl.value = u;
+        videoPreviewVisible.value = true;
+      } catch (e) {}
+    }
+
+    function closeVideoPreview() {
+      try {
+        videoPreviewVisible.value = false;
+        videoPreviewUrl.value = '';
+      } catch (e) {}
+    }
+
+    function requestCloseVideoPreview() {
+      try {
+        // Avoid closing due to synthetic taps after gestures.
+        if (imgDragActive || imgPinchActive) return;
+        closeVideoPreview();
       } catch (e) {}
     }
 
@@ -4293,6 +4325,11 @@ const app = createApp({
       openImagePreview,
       closeImagePreview,
       requestCloseImagePreview,
+      videoPreviewVisible,
+      videoPreviewUrl,
+      openVideoPreview,
+      closeVideoPreview,
+      requestCloseVideoPreview,
       onImagePreviewToggle,
       onImagePreviewTouchStart,
       onImagePreviewTouchMove,

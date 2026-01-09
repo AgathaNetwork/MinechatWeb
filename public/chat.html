@@ -22,6 +22,7 @@
       .img-preview-mask{position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px}
       .img-preview-img{max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;background:var(--mc-surface);touch-action:none;user-select:none;cursor:grab;transform-origin:0 0}
       .img-preview-img.dragging{cursor:grabbing}
+      .video-preview-video{max-width:95vw;max-height:95vh;border-radius:8px;background:var(--mc-surface)}
       .loading-spinner{width:40px;height:40px;border:4px solid var(--mc-border);border-top:4px solid var(--el-color-primary, #409eff);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto}
       @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
 
@@ -178,6 +179,16 @@
                   @mousedown.prevent="onImagePreviewMouseDown"
                 />
               </div>
+              <div v-if="videoPreviewVisible" class="img-preview-mask" @click="requestCloseVideoPreview">
+                <video
+                  :src="videoPreviewUrl"
+                  class="video-preview-video"
+                  controls
+                  autoplay
+                  playsinline
+                  @click.stop
+                ></video>
+              </div>
               <div v-if="chatLoading" style="position:absolute;top:0;left:0;right:0;bottom:0;background:var(--mc-surface);display:flex;align-items:center;justify-content:center;z-index:1000;border-radius:8px">
                 <div style="text-align:center">
                   <div class="loading-spinner"></div>
@@ -247,7 +258,27 @@
                         <div v-if="m.content.filename" style="margin-top:6px;font-size:12px;color:var(--mc-text-regular)">{{ messageFilename(m) }}</div>
                       </template>
                       <template v-else-if="m.type==='file' && m.content && isVideoFile(m)">
-                        <video :src="fileDisplayUrl(m)" controls style="max-width:320px;max-height:240px;display:block;border-radius:8px" :poster="m.content.thumbnailUrl || ''"></video>
+                        <video
+                          :src="fileDisplayUrl(m)"
+                          style="max-width:320px;max-height:240px;display:block;border-radius:8px;cursor:pointer"
+                          :poster="m.content.thumbnailUrl || ''"
+                          muted
+                          playsinline
+                          preload="metadata"
+                          @click.stop="openVideoPreview(fileOriginalUrl(m))"
+                        ></video>
+                        <div v-if="m.content.filename" style="margin-top:6px;font-size:12px;color:var(--mc-text-regular)">{{ messageFilename(m) }}</div>
+                      </template>
+                      <template v-else-if="m.type==='video' && m.content && (m.content.url || m.content.__localUrl)">
+                        <video
+                          :src="(m.content.__localUrl || m.content.url)"
+                          style="max-width:320px;max-height:240px;display:block;border-radius:8px;cursor:pointer"
+                          :poster="m.content.thumbnailUrl || ''"
+                          muted
+                          playsinline
+                          preload="metadata"
+                          @click.stop="openVideoPreview(m.content.__localUrl || m.content.url)"
+                        ></video>
                         <div v-if="m.content.filename" style="margin-top:6px;font-size:12px;color:var(--mc-text-regular)">{{ messageFilename(m) }}</div>
                       </template>
                       <template v-else-if="m.type==='file' && m.content && m.content.url">
