@@ -195,7 +195,68 @@ const app = createApp({
       try {
         const res = await safeFetch(`${apiBase.value}/chats`);
         if (!res.ok) return;
-        chats.value = sortChatsList(await res.json());
+        const raw = await res.json();
+        chats.value = sortChatsList(raw);
+
+        // Initialize unread flags from server snapshot (covers offline期间收到消息的提示).
+        try {
+          const keep = new Set();
+          const seenMap = loadChatSeenMap();
+          (chats.value || []).forEach((c) => {
+            if (!c || c.id === undefined || c.id === null) return;
+            const cid = String(c.id);
+            keep.add(cid);
+            if (c.hasUnread !== undefined) {
+              chatUnreadMap[cid] = !!c.hasUnread;
+            } else {
+              // Fallback: compare lastMessage time with local last-seen
+              try {
+                const lm = c.lastMessage;
+                if (!lm || typeof lm !== 'object') return;
+                const from = lm.from_user || lm.fromUser || lm.from || '';
+                if (selfUserId.value && from && String(from) === String(selfUserId.value)) return;
+                const ts = parseAnyTimeToMs(lm.created_at || lm.createdAt || lm.time || lm.ts || 0);
+                const seen = Number(seenMap[cid] || 0);
+                if (ts > 0 && ts > seen) chatUnreadMap[cid] = true;
+              } catch (e2) {}
+            }
+          });
+          Object.keys(chatUnreadMap || {}).forEach((k) => {
+            if (!keep.has(String(k))) delete chatUnreadMap[k];
+          });
+        } catch (e) {}
+      } catch (e) {}
+    }
+
+    // Local last-seen timestamps (fallback when backend does not provide hasUnread)
+    const CHAT_SEEN_KEY = 'minechat.chatSeenAt.v1';
+
+    function loadChatSeenMap() {
+      try {
+        const raw = localStorage.getItem(CHAT_SEEN_KEY);
+        if (!raw) return {};
+        const obj = JSON.parse(raw);
+        if (!obj || typeof obj !== 'object') return {};
+        return obj;
+      } catch (e) {
+        return {};
+      }
+    }
+
+    function saveChatSeenMap(map) {
+      try {
+        localStorage.setItem(CHAT_SEEN_KEY, JSON.stringify(map || {}));
+      } catch (e) {}
+    }
+
+    function setChatSeenAtMs(chatId, ms) {
+      try {
+        const id = chatId !== undefined && chatId !== null ? String(chatId) : '';
+        if (!id) return;
+        const t = Number(ms || 0);
+        const map = loadChatSeenMap();
+        map[id] = t > 0 ? t : Date.now();
+        saveChatSeenMap(map);
       } catch (e) {}
     }
 
@@ -864,6 +925,7 @@ const app = createApp({
     }
 
     function openGlobal() {
+      try { setChatSeenAtMs('global', Date.now()); } catch (e) {}
       window.location.href = '/m/chat_detail.html?chat=global';
     }
 
@@ -871,6 +933,7 @@ const app = createApp({
       try {
         if (chat && chat.id) delete chatUnreadMap[String(chat.id)];
       } catch (e) {}
+      try { if (chat && chat.id) setChatSeenAtMs(String(chat.id), Date.now()); } catch (e) {}
       window.location.href = `/m/chat_detail.html?chat=${encodeURIComponent(chat.id)}`;
     }
 

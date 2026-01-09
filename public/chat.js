@@ -16,6 +16,38 @@ const app = createApp({
     const currentChatFaceUrl = ref('');
     const currentChatMeta = ref(null);
 
+    // Local last-seen timestamps (fallback when backend does not provide hasUnread)
+    const CHAT_SEEN_KEY = 'minechat.chatSeenAt.v1';
+
+    function loadChatSeenMap() {
+      try {
+        const raw = localStorage.getItem(CHAT_SEEN_KEY);
+        if (!raw) return {};
+        const obj = JSON.parse(raw);
+        if (!obj || typeof obj !== 'object') return {};
+        return obj;
+      } catch (e) {
+        return {};
+      }
+    }
+
+    function saveChatSeenMap(map) {
+      try {
+        localStorage.setItem(CHAT_SEEN_KEY, JSON.stringify(map || {}));
+      } catch (e) {}
+    }
+
+    function setChatSeenAtMs(chatId, ms) {
+      try {
+        const id = chatId !== undefined && chatId !== null ? String(chatId) : '';
+        if (!id) return;
+        const t = Number(ms || 0);
+        const map = loadChatSeenMap();
+        map[id] = t > 0 ? t : Date.now();
+        saveChatSeenMap(map);
+      } catch (e) {}
+    }
+
     const messages = ref([]);
     const msgById = reactive({});
     const userNameCache = reactive({});
@@ -4036,7 +4068,40 @@ const app = createApp({
         }
         const res = await safeFetch(`${apiBase.value}/chats`);
         if (!res.ok) throw new Error('未登录或请求失败');
-        chats.value = sortChatsList(await res.json());
+        const raw = await res.json();
+        chats.value = sortChatsList(raw);
+
+        // Initialize unread flags from server snapshot (covers offline期间收到消息的提示).
+        try {
+          const keep = new Set();
+          const seenMap = loadChatSeenMap();
+          (chats.value || []).forEach((c) => {
+            if (!c || c.id === undefined || c.id === null) return;
+            const cid = String(c.id);
+            keep.add(cid);
+            const isCurrent = currentChatId.value !== null && currentChatId.value !== undefined && String(currentChatId.value) === cid;
+            if (isCurrent) {
+              chatUnreadMap[cid] = false;
+            } else if (c.hasUnread !== undefined) {
+              chatUnreadMap[cid] = !!c.hasUnread;
+            } else {
+              // Fallback: compare lastMessage time with local last-seen
+              try {
+                const lm = c.lastMessage;
+                if (!lm || typeof lm !== 'object') return;
+                const from = lm.from_user || lm.fromUser || lm.from || '';
+                if (selfUserId.value && from && String(from) === String(selfUserId.value)) return;
+                const ts = parseAnyTimeToMs(lm.created_at || lm.createdAt || lm.time || lm.ts || 0);
+                const seen = Number(seenMap[cid] || 0);
+                if (ts > 0 && ts > seen) chatUnreadMap[cid] = true;
+              } catch (e2) {}
+            }
+          });
+          // Cleanup stale keys
+          Object.keys(chatUnreadMap || {}).forEach((k) => {
+            if (!keep.has(String(k))) delete chatUnreadMap[k];
+          });
+        } catch (e) {}
 
         // If we were asked to open a specific chat, but it doesn't appear in the list yet
         // (race condition / cached list / eventual consistency), fetch it best-effort and insert.
@@ -4103,6 +4168,7 @@ const app = createApp({
       // 清除当前会话的未读标记
       if (id && id !== 'global') {
         chatUnreadMap[id] = false;
+        try { setChatSeenAtMs(id, Date.now()); } catch (e) {}
       }
       
       // 等待下一个tick，确保UI更新
