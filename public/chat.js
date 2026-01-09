@@ -5087,7 +5087,7 @@ const app = createApp({
           try { ElementPlus.ElMessage.warning('坐标信息不完整'); } catch (e0) {}
           return;
         }
-        window.open(url, '_blank');
+        window.location.href = url;
       } catch (e) {
         try { window.location.href = '/map.html'; } catch (e2) {}
       }
