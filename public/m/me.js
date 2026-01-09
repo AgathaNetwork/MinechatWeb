@@ -67,6 +67,248 @@ const app = createApp({
     const playtimeSummaryText = ref('');
     const playtimeDaySecondsMap = ref({});
 
+    // App settings (for uni-app App-Plus webview)
+    const appDialogVisible = ref(false);
+    const cacheSizeText = ref('');
+    const cacheBusy = ref(false);
+    const appInfo = ref({});
+    const isAppEnv = ref(false);
+
+    function detectAppEnv() {
+      try {
+        isAppEnv.value = !!(window.plus && window.plus.runtime);
+      } catch (e) {
+        isAppEnv.value = false;
+      }
+    }
+
+    detectAppEnv();
+    try {
+      document.addEventListener('plusready', detectAppEnv, false);
+    } catch (e) {}
+
+    function formatBytes(n) {
+      const v = Number(n);
+      if (!Number.isFinite(v) || v <= 0) return '0B';
+      const units = ['B', 'KB', 'MB', 'GB'];
+      let idx = 0;
+      let num = v;
+      while (num >= 1024 && idx < units.length - 1) {
+        num /= 1024;
+        idx += 1;
+      }
+      return `${num.toFixed(idx === 0 ? 0 : 2)}${units[idx]}`;
+    }
+
+    function guessEnvLabel() {
+      return isAppEnv.value ? 'App(plus)' : '浏览器';
+    }
+
+    function safeStr(v) {
+      if (v === null || v === undefined) return '';
+      return String(v);
+    }
+
+    function readBasicInfo() {
+      const ua = safeStr(navigator.userAgent);
+      const lang = safeStr(navigator.language);
+      const platform = safeStr(navigator.platform);
+      const screenText = window.screen ? `${screen.width}×${screen.height}` : '';
+
+      return {
+        env: guessEnvLabel(),
+        ua,
+        platform,
+        lang,
+        screen: screenText,
+      };
+    }
+
+    function readPlusInfoBestEffort() {
+      try {
+        const osName = window.plus && plus.os ? safeStr(plus.os.name) : '';
+        const osVersion = window.plus && plus.os ? safeStr(plus.os.version) : '';
+        const model = window.plus && plus.device ? safeStr(plus.device.model) : '';
+        const vendor = window.plus && plus.device ? safeStr(plus.device.vendor) : '';
+        const uuid = window.plus && plus.device ? safeStr(plus.device.uuid) : '';
+        const storageLen = window.plus && plus.storage && plus.storage.getLength ? safeStr(plus.storage.getLength()) : '';
+        return { osName, osVersion, model, vendor, uuid, storageLen };
+      } catch (e) {
+        return { osName: '', osVersion: '', model: '', vendor: '', uuid: '', storageLen: '' };
+      }
+    }
+
+    function getRuntimeProperty() {
+      return new Promise((resolve) => {
+        try {
+          if (!window.plus || !plus.runtime || !plus.runtime.getProperty) return resolve(null);
+          plus.runtime.getProperty(plus.runtime.appid, (info) => resolve(info || null));
+        } catch (e) {
+          resolve(null);
+        }
+      });
+    }
+
+    async function refreshSystemInfo() {
+      const base = readBasicInfo();
+      const plusInfo = isAppEnv.value ? readPlusInfoBestEffort() : {};
+      const rt = isAppEnv.value ? await getRuntimeProperty() : null;
+
+      appInfo.value = {
+        环境: base.env || '-',
+        平台: base.platform || '-',
+        语言: base.lang || '-',
+        屏幕: base.screen || '-',
+        系统: plusInfo.osName ? `${plusInfo.osName}${plusInfo.osVersion ? ' ' + plusInfo.osVersion : ''}` : '-',
+        设备: plusInfo.model || '-',
+        厂商: plusInfo.vendor || '-',
+        AppID: (rt && (rt.appid || rt.id)) ? safeStr(rt.appid || rt.id) : (isAppEnv.value ? safeStr(plus.runtime && plus.runtime.appid) : '-') || '-',
+        版本: rt && (rt.version || rt.versionName) ? safeStr(rt.version || rt.versionName) : '-',
+        Build: rt && (rt.versionCode || rt.build) ? safeStr(rt.versionCode || rt.build) : '-',
+        PlusStorage条目: plusInfo.storageLen || '-',
+        UA: base.ua || '-',
+      };
+    }
+
+    const appInfoRows = computed(() => {
+      const obj = appInfo.value || {};
+      return Object.keys(obj).map((k) => ({ k, v: safeStr(obj[k]) || '-' }));
+    });
+
+    function calculatePlusCacheSize() {
+      return new Promise((resolve) => {
+        try {
+          if (!window.plus || !plus.cache || !plus.cache.calculate) return resolve(null);
+          plus.cache.calculate((size) => resolve(size));
+        } catch (e) {
+          resolve(null);
+        }
+      });
+    }
+
+    async function refreshAppCache() {
+      cacheBusy.value = true;
+      try {
+        if (!isAppEnv.value) {
+          cacheSizeText.value = '';
+          return;
+        }
+        const size = await calculatePlusCacheSize();
+        cacheSizeText.value = size === null ? '不支持' : formatBytes(size);
+      } finally {
+        cacheBusy.value = false;
+      }
+    }
+
+    function clearPlusCache() {
+      return new Promise((resolve) => {
+        try {
+          if (!window.plus || !plus.cache || !plus.cache.clear) return resolve(false);
+          plus.cache.clear(() => resolve(true));
+        } catch (e) {
+          resolve(false);
+        }
+      });
+    }
+
+    async function clearAppCache() {
+      if (!isAppEnv.value) {
+        ElementPlus.ElMessage.info('当前环境不支持清理 App 缓存');
+        return;
+      }
+      cacheBusy.value = true;
+      try {
+        const ok = await clearPlusCache();
+        if (ok) ElementPlus.ElMessage.success('已清理 App 缓存');
+        else ElementPlus.ElMessage.warning('未能清理 App 缓存（可能不支持）');
+        await refreshAppCache();
+      } finally {
+        cacheBusy.value = false;
+      }
+    }
+
+    function clearWebStorage() {
+      try { localStorage.clear(); } catch (e) {}
+      try { sessionStorage.clear(); } catch (e) {}
+      ElementPlus.ElMessage.success('已清理网页本地存储');
+    }
+
+    async function clearCookies() {
+      try {
+        if (ElementPlus && ElementPlus.ElMessageBox && ElementPlus.ElMessageBox.confirm) {
+          await ElementPlus.ElMessageBox.confirm(
+            '清理 Cookie 后将丢失登录态，需要退出程序并重新登录。是否继续？',
+            '确认清理 Cookie',
+            {
+              confirmButtonText: '继续',
+              cancelButtonText: '取消',
+              type: 'warning',
+            }
+          );
+        } else {
+          const ok = window.confirm('清理 Cookie 后将丢失登录态，需要退出程序并重新登录。是否继续？');
+          if (!ok) return;
+        }
+      } catch (e) {
+        // 用户取消
+        return;
+      }
+
+      try {
+        const raw = String(document.cookie || '');
+        const names = raw
+          .split(';')
+          .map((x) => x.trim())
+          .filter(Boolean)
+          .map((x) => x.split('=')[0].trim())
+          .filter(Boolean);
+        const uniq = Array.from(new Set(names));
+        for (const n of uniq) {
+          document.cookie = `${n}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+        }
+        ElementPlus.ElMessage.success('已尝试清理 Cookie，请退出程序后重新登录');
+      } catch (e) {
+        ElementPlus.ElMessage.warning('清理 Cookie 失败');
+      }
+    }
+
+    function waitForPlusReady(timeoutMs) {
+      const t = Number(timeoutMs);
+      const timeout = Number.isFinite(t) ? t : 1500;
+      if (isAppEnv.value) return Promise.resolve(true);
+      return new Promise((resolve) => {
+        let done = false;
+        const timer = setTimeout(() => {
+          if (done) return;
+          done = true;
+          resolve(false);
+        }, timeout);
+        try {
+          document.addEventListener(
+            'plusready',
+            () => {
+              if (done) return;
+              done = true;
+              clearTimeout(timer);
+              detectAppEnv();
+              resolve(true);
+            },
+            { once: true }
+          );
+        } catch (e) {
+          clearTimeout(timer);
+          resolve(false);
+        }
+      });
+    }
+
+    async function openAppDialog() {
+      appDialogVisible.value = true;
+      await waitForPlusReady(1500);
+      await refreshSystemInfo();
+      await refreshAppCache();
+    }
+
     const playtimeHasAny = computed(() => {
       const m = playtimeDaySecondsMap.value;
       return !!m && typeof m === 'object' && Object.keys(m).length > 0;
@@ -1003,6 +1245,18 @@ const app = createApp({
       playtimeCellStyle,
       openPlaytimeDialog,
       runPlaytimeQuery,
+
+      // app settings
+      appDialogVisible,
+      isAppEnv,
+      cacheSizeText,
+      cacheBusy,
+      appInfoRows,
+      openAppDialog,
+      refreshAppCache,
+      clearAppCache,
+      clearWebStorage,
+      clearCookies,
     };
   },
 });

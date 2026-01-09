@@ -164,6 +164,13 @@
             <div style="font-size:14px;color:var(--mc-text-regular)">主题</div>
             <el-switch v-model="themeDark" inline-prompt active-text="深色" inactive-text="浅色"></el-switch>
           </div>
+
+		  <div style="padding:0 12px 12px">
+			<el-button plain style="width:100%" @click="openAppDialog">
+			  <el-icon style="margin-right:4px"><setting /></el-icon>
+			  App设置
+			</el-button>
+		  </div>
         </el-card>
       </div>
 
@@ -293,6 +300,27 @@
 
           <div style="margin-top:12px;font-size:12px;color:#888" v-else-if="!homeLoading && isLoggedIn">暂无 home 数据</div>
         </el-dialog>
+
+    <el-dialog v-model="appDialogVisible" title="App设置" width="92%" top="10vh">
+      <el-alert v-if="!isAppEnv" type="info" :closable="false" show-icon title="当前为浏览器环境，部分 App 能力不可用"></el-alert>
+
+      <div style="margin-top:12px;font-weight:600">缓存</div>
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <el-button plain :loading="cacheBusy" @click="refreshAppCache">刷新缓存大小</el-button>
+      <el-button plain :loading="cacheBusy" :disabled="!isAppEnv || cacheBusy" @click="clearAppCache">清理App缓存</el-button>
+      <el-button plain @click="clearWebStorage">清理网页本地存储</el-button>
+      <el-button plain @click="clearCookies">清理Cookie</el-button>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:#888" v-if="cacheSizeText">App缓存大小：{{ cacheSizeText }}</div>
+
+      <div style="margin-top:16px;font-weight:600">系统信息</div>
+      <div style="margin-top:10px">
+      <el-table :data="appInfoRows" border size="small" style="width:100%" :show-header="false">
+        <el-table-column prop="k" width="120"></el-table-column>
+        <el-table-column prop="v"></el-table-column>
+      </el-table>
+      </div>
+    </el-dialog>
     </div>
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
