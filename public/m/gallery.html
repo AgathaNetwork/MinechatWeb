@@ -129,7 +129,16 @@
                   </div>
 
                   <div style="margin-top:10px" v-if="(detail.position && detail.position.mapUrl) || (detail.positionRows && detail.positionRows.length)">
-                    <el-link v-if="detail.position && detail.position.mapUrl" :href="detail.position.mapUrl" target="_blank" type="primary">在地图中查看</el-link>
+                    <el-button
+                      v-if="detail.position && detail.position.mapUrl"
+                      circle
+                      size="small"
+                      type="default"
+                      title="在地图中打开"
+                      @click="openDetailOnMap"
+                    >
+                      <el-icon><location /></el-icon>
+                    </el-button>
                     <div style="margin-top:8px" v-if="detail.positionRows && detail.positionRows.length">
                       <el-table :data="detail.positionRows" border size="small" style="width:100%" :show-header="false">
                         <el-table-column prop="k" width="140"></el-table-column>

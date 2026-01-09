@@ -1007,6 +1007,10 @@ const app = createApp({
     function gotoMaterials() {
       window.location.href = '/materials.html';
     }
+
+    function gotoBigMap() {
+      window.location.href = '/map.html';
+    }
     
       function gotoInfo() {
         window.location.href = '/info.html';
@@ -1084,6 +1088,7 @@ const app = createApp({
       onNav,
       gotoLogin,
       gotoMaterials,
+      gotoBigMap,
       gotoInfo,
       logout,
       reloadSelf,

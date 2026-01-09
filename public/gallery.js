@@ -317,14 +317,24 @@ const app = createApp({
     }
 
     function buildMapUrl(pos) {
+      // Point to our wrapper page so it can handle auth/theme/back behavior.
       try {
         if (!pos || typeof pos !== 'object') return '';
         const world = String(pos.world || '').trim();
         if (!world || world === 'none') return '';
         const x = Number(pos.x);
+        const y = Number(pos.y);
         const z = Number(pos.z);
         if (!Number.isFinite(x) || !Number.isFinite(z)) return '';
-        return `https://map.agatha.org.cn/#${encodeURIComponent(world)}:${encodeURIComponent(x)}:0:${encodeURIComponent(z)}:1500:0:0:0:0:perspective`;
+
+        const yy = Number.isFinite(y) ? y : 0;
+        const qs = new URLSearchParams({
+          world: world,
+          x: String(Math.round(x)),
+          y: String(Math.round(yy)),
+          z: String(Math.round(z)),
+        });
+        return `/map.html?${qs.toString()}`;
       } catch (e) {
         return '';
       }
@@ -492,6 +502,18 @@ const app = createApp({
       }
     }
 
+    function openDetailOnMap() {
+      try {
+        const d = detail.value;
+        const url = d && d.position && d.position.mapUrl ? String(d.position.mapUrl) : '';
+        if (!url) {
+          try { ElementPlus.ElMessage.warning('没有可用的坐标信息'); } catch (e0) {}
+          return;
+        }
+        window.location.href = url;
+      } catch (e) {}
+    }
+
     function setYear(v) {
       year.value = v ? String(v) : '';
       q.value = '';
@@ -551,6 +573,7 @@ const app = createApp({
       resetFilters,
       loadMore,
       openDetail,
+      openDetailOnMap,
       detailVisible,
       detailLoading,
       detailError,

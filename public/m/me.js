@@ -1244,6 +1244,10 @@ const app = createApp({
       window.location.href = '/m/materials.html';
     }
 
+    function gotoBigMap() {
+      window.location.href = '/m/map.html';
+    }
+
     onMounted(async () => {
       await fetchConfig();
       await loadSelf();
@@ -1272,6 +1276,7 @@ const app = createApp({
       goEmojiManage,
       gotoInfo,
       gotoMaterials,
+      gotoBigMap,
 
       // account dialogs
       idDialogVisible,

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="/theme.js"></script>
+    <title>大地图 - Minechat</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      html, body { height: 100%; margin: 0; overflow: hidden; background: var(--mc-body-bg); }
+      .top-bar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 52px;
+        background: var(--mc-surface);
+        border-bottom: 1px solid var(--mc-border);
+        z-index: 10;
+      }
+      .back-btn {
+        position: absolute;
+        top: 10px;
+        left: 12px;
+        height: 32px;
+        padding: 0 12px;
+        border-radius: 8px;
+        border: 1px solid var(--mc-border);
+        background: var(--mc-surface);
+        color: var(--mc-text);
+        cursor: pointer;
+      }
+      .back-btn:active { background: var(--mc-active-bg); }
+      .content {
+        position: fixed;
+        top: 52px;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 12px;
+        box-sizing: border-box;
+      }
+      .frame-wrap {
+        width: 100%;
+        height: 100%;
+        background: var(--mc-surface);
+        border: 1px solid var(--mc-border);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      iframe { width: 100%; height: 100%; border: 0; display: block; }
+    </style>
+  </head>
+  <body>
+    <div class="top-bar">
+      <button class="back-btn" id="backBtn" type="button">返回</button>
+    </div>
+    <div class="content">
+      <div class="frame-wrap">
+        <iframe id="mapFrame" src="https://map.agatha.org.cn/" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
+      </div>
+    </div>
+    <script>
+      (function () {
+        function numOrNull(v) {
+          var n = Number(v);
+          return Number.isFinite(n) ? n : null;
+        }
+
+        function buildMapHashFromQuery(sp) {
+          try {
+            // Allow passing a full hash directly.
+            var rawHash = (sp.get('hash') || '').trim();
+            if (rawHash) return rawHash.replace(/^#/, '');
+
+            var world = (sp.get('world') || '').trim();
+            if (!world) return '';
+            var x = numOrNull(sp.get('x'));
+            var y = numOrNull(sp.get('y'));
+            var z = numOrNull(sp.get('z'));
+            if (x === null || z === null) return '';
+            if (y === null) y = 0;
+
+            // This matches the existing gallery deep-link pattern that the map site understands.
+            return (
+              encodeURIComponent(world) +
+              ':' +
+              encodeURIComponent(Math.round(x)) +
+              ':' +
+              encodeURIComponent(Math.round(y)) +
+              ':' +
+              encodeURIComponent(Math.round(z)) +
+              ':1500:0:0:0:0:perspective'
+            );
+          } catch (e) {
+            return '';
+          }
+        }
+
+        // Apply deep-link (if present)
+        try {
+          var frame = document.getElementById('mapFrame');
+          if (frame) {
+            var sp = new URLSearchParams(window.location.search || '');
+            var hash = buildMapHashFromQuery(sp);
+            if (hash) {
+              frame.src = 'https://map.agatha.org.cn/#' + hash;
+            }
+          }
+        } catch (e) {}
+
+        var btn = document.getElementById('backBtn');
+        if (!btn) return;
+        btn.addEventListener('click', function () {
+          try {
+            if (window.history && window.history.length > 1) {
+              window.history.back();
+              return;
+            }
+          } catch (e) {}
+          window.location.href = '/me.html';
+        });
+      })();
+    </script>
+  </body>
+</html>

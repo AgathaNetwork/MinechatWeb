@@ -4244,6 +4244,42 @@ const app = createApp({
       }
     }
 
+    function buildCoordinateMapUrlFromMessage(m) {
+      try {
+        if (!m || !m.content) return '';
+        const dim = String(m.content.dimension || '').trim();
+        if (!dim) return '';
+        const x = Number(m.content.x);
+        const y = Number(m.content.y);
+        const z = Number(m.content.z);
+        if (!Number.isFinite(x) || !Number.isFinite(z)) return '';
+        const yy = Number.isFinite(y) ? y : 0;
+
+        const qs = new URLSearchParams({
+          world: dim,
+          x: String(Math.round(x)),
+          y: String(Math.round(yy)),
+          z: String(Math.round(z)),
+        });
+        return `/m/map.html?${qs.toString()}`;
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function openCoordinateOnMap(m) {
+      try {
+        const url = buildCoordinateMapUrlFromMessage(m);
+        if (!url) {
+          try { ElementPlus.ElMessage.warning('坐标信息不完整'); } catch (e0) {}
+          return;
+        }
+        window.location.href = url;
+      } catch (e) {
+        try { window.location.href = '/m/map.html'; } catch (e2) {}
+      }
+    }
+
     async function loadEmojiPacks() {
       try {
         const res = await safeFetch(`${apiBase.value}/emoji`);
@@ -4380,6 +4416,7 @@ const app = createApp({
       openCoordinateDialog,
       cancelCoordinateDialog,
       confirmSendCoordinate,
+      openCoordinateOnMap,
       importCoordinateFromHome,
       // group management
       isGroupChat,
