@@ -6,7 +6,10 @@
     <script src="/theme.js"></script>
     <title>大地图 - Minechat</title>
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/theme-chalk/dark/css-vars.css" />
     <style>
+      [v-cloak]{display:none}
       html, body { height: 100%; margin: 0; overflow: hidden; background: var(--mc-body-bg); }
       .top-bar {
         position: fixed;
@@ -17,20 +20,12 @@
         background: var(--mc-surface);
         border-bottom: 1px solid var(--mc-border);
         z-index: 10;
+        display:flex;
+        align-items:center;
+        gap:0;
+        padding:0 12px;
+        box-sizing:border-box;
       }
-      .back-btn {
-        position: absolute;
-        top: 10px;
-        left: 12px;
-        height: 32px;
-        padding: 0 12px;
-        border-radius: 8px;
-        border: 1px solid var(--mc-border);
-        background: var(--mc-surface);
-        color: var(--mc-text);
-        cursor: pointer;
-      }
-      .back-btn:active { background: var(--mc-active-bg); }
       .content {
         position: fixed;
         top: 52px;
@@ -52,75 +47,244 @@
     </style>
   </head>
   <body>
-    <div class="top-bar">
-      <button class="back-btn" id="backBtn" type="button">返回</button>
-    </div>
-    <div class="content">
-      <div class="frame-wrap">
-        <iframe id="mapFrame" src="https://map.agatha.org.cn/" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
+    <div id="app" v-cloak>
+      <div class="top-bar">
+        <el-button @click="goBack" size="small">返回</el-button>
+        <el-button @click="openShare" circle size="small" title="分享" style="margin-left:4px">
+          <el-icon><share /></el-icon>
+        </el-button>
+        <div style="flex:1;font-weight:600;margin-left:16px">大地图</div>
       </div>
+      <div class="content">
+        <div class="frame-wrap">
+          <iframe :src="frameSrc" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
+        </div>
+      </div>
+
+      <el-dialog v-model="shareDialogVisible" title="分享坐标" width="520px" :close-on-click-modal="false">
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <el-input v-model="shareForm.name" placeholder="名称（例如：下界门）" maxlength="50" show-word-limit></el-input>
+          <el-input v-model="shareForm.description" type="textarea" :rows="3" placeholder="描述（可选）" maxlength="200" show-word-limit></el-input>
+          <el-select v-model="shareChatId" filterable placeholder="选择会话" style="width:100%" :loading="shareChatsLoading">
+            <el-option v-for="c in shareChatOptions" :key="c.value" :label="c.label" :value="c.value" />
+          </el-select>
+          <div v-if="shareError" style="font-size:12px;color:var(--el-color-danger)">{{ shareError }}</div>
+        </div>
+        <template #footer>
+          <el-button @click="shareDialogVisible=false">取消</el-button>
+          <el-button type="primary" :loading="shareSending" :disabled="!shareChatId" @click="confirmShare">发送</el-button>
+        </template>
+      </el-dialog>
     </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue@2/dist/index.iife.min.js"></script>
     <script>
-      (function () {
-        function numOrNull(v) {
-          var n = Number(v);
-          return Number.isFinite(n) ? n : null;
-        }
+      const { createApp } = Vue;
 
-        function buildMapHashFromQuery(sp) {
-          try {
-            // Allow passing a full hash directly.
-            var rawHash = (sp.get('hash') || '').trim();
-            if (rawHash) return rawHash.replace(/^#/, '');
+      const app = createApp({
+        data() {
+          return {
+            frameSrc: 'https://map.agatha.org.cn/',
 
-            var world = (sp.get('world') || '').trim();
-            if (!world) return '';
-            var x = numOrNull(sp.get('x'));
-            var y = numOrNull(sp.get('y'));
-            var z = numOrNull(sp.get('z'));
-            if (x === null || z === null) return '';
-            if (y === null) y = 0;
+            apiBase: '',
+            token: (localStorage.getItem('token') || '').trim(),
 
-            // This matches the existing gallery deep-link pattern that the map site understands.
-            return (
-              encodeURIComponent(world) +
-              ':' +
-              encodeURIComponent(Math.round(x)) +
-              ':' +
-              encodeURIComponent(Math.round(y)) +
-              ':' +
-              encodeURIComponent(Math.round(z)) +
-              ':1500:0:0:0:0:perspective'
-            );
-          } catch (e) {
-            return '';
-          }
-        }
+            shareDialogVisible: false,
+            shareChatsLoading: false,
+            shareChatOptions: [],
+            shareChatId: '',
+            shareSending: false,
+            shareError: '',
+            shareForm: { name: '', description: '' },
+          };
+        },
+        created() {
+          this.frameSrc = this.computeFrameSrc();
+        },
+        methods: {
+          async fetchConfig() {
+            const conf = await fetch('/config', { credentials: 'include' }).then((r) => r.json());
+            this.apiBase = (conf && (conf.apiProxyBase || conf.apiBase)) ? (conf.apiProxyBase || conf.apiBase) : '';
+            return conf;
+          },
+          authHeaders(extra) {
+            const h = Object.assign({}, extra || {});
+            const t = (this.token || '').trim();
+            if (t) h['Authorization'] = `Bearer ${t}`;
+            return h;
+          },
+          async safeFetch(url, options) {
+            const opt = Object.assign({ credentials: 'include' }, options || {});
+            opt.headers = this.authHeaders(opt.headers);
+            return fetch(url, opt);
+          },
+          computeFrameSrc() {
+            try {
+              const sp = new URLSearchParams(window.location.search || '');
+              const rawHash = String(sp.get('hash') || '').trim();
+              if (rawHash) return 'https://map.agatha.org.cn/#' + rawHash.replace(/^#/, '');
 
-        // Apply deep-link (if present)
-        try {
-          var frame = document.getElementById('mapFrame');
-          if (frame) {
-            var sp = new URLSearchParams(window.location.search || '');
-            var hash = buildMapHashFromQuery(sp);
-            if (hash) {
-              frame.src = 'https://map.agatha.org.cn/#' + hash;
+              const world = String(sp.get('world') || '').trim();
+              if (!world) return 'https://map.agatha.org.cn/';
+              const x = Number(sp.get('x'));
+              const y = Number(sp.get('y'));
+              const z = Number(sp.get('z'));
+              if (!Number.isFinite(x) || !Number.isFinite(z)) return 'https://map.agatha.org.cn/';
+              const yy = Number.isFinite(y) ? y : 0;
+              const hash =
+                encodeURIComponent(world) +
+                ':' +
+                encodeURIComponent(Math.round(x)) +
+                ':' +
+                encodeURIComponent(Math.round(yy)) +
+                ':' +
+                encodeURIComponent(Math.round(z)) +
+                ':1500:0:0:0:0:perspective';
+              return 'https://map.agatha.org.cn/#' + hash;
+            } catch (e) {
+              return 'https://map.agatha.org.cn/';
             }
-          }
-        } catch (e) {}
+          },
+          parseCoordsFromCurrentUrl() {
+            try {
+              const sp = new URLSearchParams(window.location.search || '');
+              const world = String(sp.get('world') || '').trim();
+              const x = Number(sp.get('x'));
+              const y = Number(sp.get('y'));
+              const z = Number(sp.get('z'));
+              if (world && Number.isFinite(x) && Number.isFinite(z)) {
+                return { dimension: world, x: Math.round(x), y: Number.isFinite(y) ? Math.round(y) : 0, z: Math.round(z) };
+              }
+            } catch (e) {}
 
-        var btn = document.getElementById('backBtn');
-        if (!btn) return;
-        btn.addEventListener('click', function () {
-          try {
-            if (window.history && window.history.length > 1) {
-              window.history.back();
+            try {
+              const sp = new URLSearchParams(window.location.search || '');
+              const rawHash = String(sp.get('hash') || '').trim();
+              const h = rawHash ? rawHash.replace(/^#/, '') : '';
+              if (!h) return null;
+              const parts = h.split(':');
+              if (!parts || parts.length < 4) return null;
+              const dimension = decodeURIComponent(parts[0] || '');
+              const x = Number(decodeURIComponent(parts[1] || ''));
+              const y = Number(decodeURIComponent(parts[2] || ''));
+              const z = Number(decodeURIComponent(parts[3] || ''));
+              if (!dimension || !Number.isFinite(x) || !Number.isFinite(z)) return null;
+              return { dimension, x: Math.round(x), y: Number.isFinite(y) ? Math.round(y) : 0, z: Math.round(z) };
+            } catch (e) {
+              return null;
+            }
+          },
+          async loadShareChats() {
+            if (this.shareChatsLoading) return;
+            this.shareChatsLoading = true;
+            this.shareError = '';
+            try {
+              if (!this.apiBase) await this.fetchConfig();
+              if (!this.apiBase) throw new Error('缺少 API 配置');
+              const res = await this.safeFetch(`${this.apiBase}/chats`);
+              if (!res.ok) throw new Error('加载会话失败');
+              const list = await res.json().catch(() => []);
+              const arr = Array.isArray(list) ? list : [];
+              this.shareChatOptions = arr
+                .filter((c) => c && String(c.id || '').trim() && String(c.id) !== 'global')
+                .map((c) => ({ value: String(c.id), label: String(c.displayName || c.name || c.id) }));
+            } catch (e) {
+              this.shareError = (e && e.message) ? e.message : String(e);
+              this.shareChatOptions = [];
+            } finally {
+              this.shareChatsLoading = false;
+            }
+          },
+          async openShare() {
+            this.shareError = '';
+            const coords = this.parseCoordsFromCurrentUrl();
+            if (!coords) {
+              try { ElementPlus.ElMessage.warning('当前页面没有可分享的坐标参数'); } catch (e0) {}
               return;
             }
-          } catch (e) {}
-          window.location.href = '/me.html';
-        });
-      })();
+            this.shareDialogVisible = true;
+            await this.loadShareChats();
+          },
+          async confirmShare() {
+            if (this.shareSending) return;
+            try {
+              this.shareError = '';
+              const coords = this.parseCoordsFromCurrentUrl();
+              if (!coords) {
+                this.shareError = '当前页面没有可分享的坐标参数';
+                return;
+              }
+              const name = String(this.shareForm.name || '').trim();
+              const descriptionRaw = String(this.shareForm.description || '').trim();
+              const description = descriptionRaw ? descriptionRaw : null;
+              const chatId = String(this.shareChatId || '').trim();
+              if (!chatId) {
+                this.shareError = '请选择会话';
+                return;
+              }
+              if (!name) {
+                this.shareError = '请输入名称';
+                return;
+              }
+
+              this.shareSending = true;
+              if (!this.apiBase) await this.fetchConfig();
+              if (!this.apiBase) throw new Error('缺少 API 配置');
+              const payload = {
+                type: 'coordinate',
+                content: {
+                  name,
+                  dimension: coords.dimension,
+                  x: coords.x,
+                  y: coords.y,
+                  z: coords.z,
+                  description,
+                },
+              };
+              const res = await this.safeFetch(`${this.apiBase}/chats/${encodeURIComponent(chatId)}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+              });
+              if (!res.ok) {
+                const txt = await res.text().catch(() => '');
+                throw new Error(txt || '发送失败');
+              }
+              this.shareDialogVisible = false;
+              this.shareChatId = '';
+              this.shareForm.name = '';
+              this.shareForm.description = '';
+              try { ElementPlus.ElMessage.success('已发送'); } catch (e2) {}
+            } catch (e) {
+              this.shareError = (e && e.message) ? e.message : String(e);
+            } finally {
+              this.shareSending = false;
+            }
+          },
+          goBack() {
+            try {
+              if (window.history && window.history.length > 1) {
+                window.history.back();
+                return;
+              }
+            } catch (e) {}
+            window.location.href = '/me.html';
+          },
+        },
+      });
+
+      try {
+        const icons = window.ElementPlusIconsVue;
+        if (icons && typeof icons === 'object') {
+          for (const [key, component] of Object.entries(icons)) {
+            app.component(key, component);
+          }
+        }
+      } catch (e) {}
+
+      app.use(ElementPlus).mount('#app');
     </script>
   </body>
 </html>
