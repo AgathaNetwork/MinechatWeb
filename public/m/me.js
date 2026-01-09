@@ -69,10 +69,51 @@ const app = createApp({
 
     // App settings (for uni-app App-Plus webview)
     const appDialogVisible = ref(false);
+    const appDialogTab = ref('general');
     const cacheSizeText = ref('');
     const cacheBusy = ref(false);
     const appInfo = ref({});
     const isAppEnv = ref(false);
+
+    function readQueryParam(name) {
+      try {
+        const key = String(name || '').trim();
+        if (!key) return '';
+        const raw = String(window.location && window.location.search ? window.location.search : '');
+        if (!raw || raw === '?') return '';
+        const s = raw.startsWith('?') ? raw.slice(1) : raw;
+        const parts = s.split('&').filter(Boolean);
+        for (const p of parts) {
+          const idx = p.indexOf('=');
+          const k = idx >= 0 ? p.slice(0, idx) : p;
+          if (k !== key) continue;
+          const v = idx >= 0 ? p.slice(idx + 1) : '';
+          return decodeURIComponent(v || '');
+        }
+        return '';
+      } catch (e) {
+        return '';
+      }
+    }
+
+    const appBuildTime = ref('');
+
+    function refreshAppBuildTimeFromUrl() {
+      // 由 Uniapp WebView 侧注入（每次构建会变化）
+      const v = readQueryParam('mc_app_build_time') || readQueryParam('mc_build_time');
+      if (v) {
+        appBuildTime.value = safeStr(v || '');
+        return;
+      }
+      try {
+        const ls = window.localStorage ? window.localStorage.getItem('mc_app_build_time') : '';
+        appBuildTime.value = safeStr(ls || '');
+      } catch (e) {
+        appBuildTime.value = '';
+      }
+    }
+
+    refreshAppBuildTimeFromUrl();
 
     function detectAppEnv() {
       try {
@@ -173,6 +214,21 @@ const app = createApp({
     const appInfoRows = computed(() => {
       const obj = appInfo.value || {};
       return Object.keys(obj).map((k) => ({ k, v: safeStr(obj[k]) || '-' }));
+    });
+
+    const appAboutRows = computed(() => {
+      const obj = appInfo.value || {};
+      const version = safeStr(obj['版本'] || '');
+      const build = safeStr(obj['Build'] || '');
+      const appid = safeStr(obj['AppID'] || '');
+      const buildTime = safeStr(appBuildTime.value || '');
+
+      return [
+        { k: 'AppID', v: appid || '-' },
+        { k: '版本', v: version || '-' },
+        { k: 'Build', v: build || '-' },
+        { k: '编译时间', v: buildTime || '-' },
+      ];
     });
 
     function calculatePlusCacheSize() {
@@ -359,6 +415,8 @@ const app = createApp({
 
     async function openAppDialog() {
       appDialogVisible.value = true;
+      appDialogTab.value = 'general';
+      refreshAppBuildTimeFromUrl();
       await waitForPlusReady(1500);
       await refreshSystemInfo();
       await refreshAppCache();
@@ -1315,10 +1373,12 @@ const app = createApp({
 
       // app settings
       appDialogVisible,
+      appDialogTab,
       isAppEnv,
       cacheSizeText,
       cacheBusy,
       appInfoRows,
+      appAboutRows,
       openAppDialog,
       refreshAppCache,
       clearAppCache,
