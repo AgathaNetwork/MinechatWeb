@@ -345,6 +345,20 @@
           @close="cancelCoordinateDialog"
         >
           <el-form label-position="top" style="margin-top:4px">
+            <el-form-item label="从 Home 导入">
+              <div style="display:flex;gap:8px;align-items:center;width:100%">
+                <el-select v-model="coordinateHomeSelected" placeholder="选择 Home" filterable :loading="coordinateHomeLoading" style="flex:1;min-width:0">
+                  <el-option
+                    v-for="h in coordinateHomes"
+                    :key="h.name"
+                    :label="(h.name || '') + ' (' + (h.worldLabel || '-') + ') ' + (h.x || '') + ',' + (h.y || '') + ',' + (h.z || '')"
+                    :value="h.name"
+                  ></el-option>
+                </el-select>
+                <el-button plain :disabled="!coordinateHomeSelected || coordinateHomeLoading" @click="importCoordinateFromHome">导入</el-button>
+              </div>
+            </el-form-item>
+
             <el-form-item label="名称">
               <el-input v-model="coordinateForm.name" placeholder="例如：村庄传送点"></el-input>
             </el-form-item>

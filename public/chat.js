@@ -131,6 +131,11 @@ const app = createApp({
       description: '',
     });
 
+    // Coordinate import from Home
+    const coordinateHomeLoading = ref(false);
+    const coordinateHomeSelected = ref('');
+    const coordinateHomes = ref([]); // [{ name, worldKey, worldLabel, x, y, z }]
+
     function playerCardNoDataText() {
       const q = String(playerCardQuery.value || '').trim();
       return q ? '没有匹配的玩家（最多显示 5 条）' : '请输入关键词搜索（最多显示 5 条）';
@@ -4527,6 +4532,113 @@ const app = createApp({
         coordinateForm.y = '';
         coordinateForm.z = '';
         coordinateForm.description = '';
+        coordinateHomeSelected.value = '';
+      } catch (e) {}
+    }
+
+    function isVanillaWorldKeyForHome(v) {
+      const s = String(v || '').trim();
+      return s === 'world' || s === 'world_nether' || s === 'world_the_end';
+    }
+
+    function worldLabelFromHomeKey(k) {
+      const key = String(k || '').trim();
+      if (key === 'world') return '主世界';
+      if (key === 'world_nether') return '下界';
+      if (key === 'world_the_end') return '末地';
+      return key || '-';
+    }
+
+    function normalizeWorldKeyFromHome(homeObj) {
+      try {
+        if (!homeObj || typeof homeObj !== 'object') return '';
+        const wn = homeObj['world-name'] || homeObj.world_name || homeObj.worldName || '';
+        if (isVanillaWorldKeyForHome(wn)) return String(wn).trim();
+        const w = homeObj.world || '';
+        if (isVanillaWorldKeyForHome(w)) return String(w).trim();
+        const s1 = String(wn || '').trim();
+        if (s1) return s1;
+        return String(w || '').trim();
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function parseHomesFromPlayerData(data) {
+      try {
+        const homesRoot = data && typeof data === 'object' ? data.homes : null;
+        const homesObj = homesRoot && typeof homesRoot === 'object' ? homesRoot.homes : null;
+        if (!homesObj || typeof homesObj !== 'object') return [];
+
+        const entries = Object.entries(homesObj).filter(([k, v]) => k && v && typeof v === 'object');
+        return entries
+          .map(([name, h]) => {
+            const worldKey = normalizeWorldKeyFromHome(h);
+            const xNum = Number(h.x);
+            const yNum = Number(h.y);
+            const zNum = Number(h.z);
+            return {
+              name: String(name),
+              worldKey: worldKey || '',
+              worldLabel: worldLabelFromHomeKey(worldKey),
+              x: Number.isFinite(xNum) ? String(Math.round(xNum)) : h.x === undefined || h.x === null ? '' : String(h.x),
+              y: Number.isFinite(yNum) ? String(Math.round(yNum)) : h.y === undefined || h.y === null ? '' : String(h.y),
+              z: Number.isFinite(zNum) ? String(Math.round(zNum)) : h.z === undefined || h.z === null ? '' : String(h.z),
+            };
+          })
+          .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      } catch (e) {
+        return [];
+      }
+    }
+
+    async function loadCoordinateHomes(force) {
+      try {
+        if (coordinateHomeLoading.value) return;
+        if (!force && Array.isArray(coordinateHomes.value) && coordinateHomes.value.length > 0) return;
+        coordinateHomeLoading.value = true;
+        const res = await safeFetch(`${apiBase.value}/info/getPlayerData`);
+        if (!res.ok) {
+          const txt = await res.text().catch(() => '');
+          throw new Error(txt || `HTTP ${res.status}`);
+        }
+        const data = await res.json().catch(() => null);
+        coordinateHomes.value = parseHomesFromPlayerData(data);
+      } catch (e) {
+        try {
+          ElementPlus.ElMessage.error('Home 加载失败');
+        } catch (e2) {}
+      } finally {
+        coordinateHomeLoading.value = false;
+      }
+    }
+
+    function importCoordinateFromHome() {
+      try {
+        const homeName = String(coordinateHomeSelected.value || '').trim();
+        if (!homeName) {
+          try { ElementPlus.ElMessage.warning('请选择 Home'); } catch (e0) {}
+          return;
+        }
+        const list = Array.isArray(coordinateHomes.value) ? coordinateHomes.value : [];
+        const h = list.find((x) => x && String(x.name) === homeName);
+        if (!h) {
+          try { ElementPlus.ElMessage.warning('未找到该 Home'); } catch (e1) {}
+          return;
+        }
+
+        const allowedDims = new Set(['world', 'world_nether', 'world_the_end']);
+        const worldKey = String(h.worldKey || '').trim();
+        if (worldKey && allowedDims.has(worldKey)) {
+          coordinateForm.dimension = worldKey;
+        } else if (worldKey) {
+          try { ElementPlus.ElMessage.warning('该 Home 的世界不支持（仅主世界/下界/末地）'); } catch (e2) {}
+        }
+
+        coordinateForm.name = String(h.name || '').trim();
+        coordinateForm.x = String(h.x ?? '').trim();
+        coordinateForm.y = String(h.y ?? '').trim();
+        coordinateForm.z = String(h.z ?? '').trim();
       } catch (e) {}
     }
 
@@ -4542,6 +4654,7 @@ const app = createApp({
         }
         morePanelVisible.value = false;
         resetCoordinateForm();
+        await loadCoordinateHomes(false);
         coordinateDialogVisible.value = true;
       } catch (e) {}
     }
@@ -5017,6 +5130,9 @@ const app = createApp({
       coordinateDialogVisible,
       coordinateSending,
       coordinateForm,
+      coordinateHomeLoading,
+      coordinateHomeSelected,
+      coordinateHomes,
       fileInputEl,
       messagesEl,
       isGlobalChat,
@@ -5134,6 +5250,7 @@ const app = createApp({
       openCoordinateDialog,
       cancelCoordinateDialog,
       confirmSendCoordinate,
+      importCoordinateFromHome,
       onPlayerCardQuery,
       openFilePicker,
       onFileSelected,
