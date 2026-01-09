@@ -13,8 +13,9 @@
       html,body{height:100%;overflow:hidden;overscroll-behavior:none;-webkit-text-size-adjust:100%}
       body{margin:0;padding:0}
       input,textarea,.el-input__inner,.el-textarea__inner{font-size:16px !important}
-      .top-bar{position:fixed;top:0;left:0;right:0;height:50px;background:#fff;border-bottom:1px solid #e6e6e6;display:flex;align-items:center;padding:0 12px;z-index:100;gap:8px}
-      .messages-area{position:fixed;top:50px;left:0;right:0;bottom:var(--input-area-height, 160px);overflow:auto;padding:12px;background:var(--mc-body-bg);-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y}
+      .top-spacer{position:fixed;top:0;left:0;right:0;height:4vh;background:var(--mc-body-bg);z-index:99}
+      .top-bar{position:fixed;top:4vh;left:0;right:0;height:50px;background:#fff;border-bottom:1px solid #e6e6e6;display:flex;align-items:center;padding:0 12px;z-index:100;gap:8px}
+      .messages-area{position:fixed;top:calc(4vh + 50px);left:0;right:0;bottom:var(--input-area-height, 160px);overflow:auto;padding:12px;background:var(--mc-body-bg);-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y}
       .input-area{position:fixed;bottom:0;left:0;right:0;background:var(--mc-surface);border-top:1px solid var(--mc-border);padding:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:6px;touch-action:manipulation}
       .msg-row{width:100%;margin-bottom:10px;display:flex;gap:8px;align-items:flex-start}
       .msg-row.own{justify-content:flex-end}
@@ -49,6 +50,7 @@
     </style>
   </head>
   <body>
+    <div class="top-spacer"></div>
     <div id="app" v-cloak>
       <div class="top-bar">
         <el-button @click="goBack" circle size="small">
