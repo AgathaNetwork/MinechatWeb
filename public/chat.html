@@ -319,6 +319,7 @@
               <div v-if="canCopyText(ctxMenuMsg)" style="cursor:pointer;padding:6px 10px" @click="ctxCopy">复制</div>
               <div v-if="!isGlobalChat && canMentionFromMessage(ctxMenuMsg)" style="cursor:pointer;padding:6px 10px" @click="ctxMention">@TA</div>
               <div v-if="!isGlobalChat" style="cursor:pointer;padding:6px 10px" @click="ctxReply">回复</div>
+              <div v-if="!isGlobalChat && canForwardMessage(ctxMenuMsg)" style="cursor:pointer;padding:6px 10px" @click="ctxForward">转发</div>
               <div v-if="!isGlobalChat && canRecallMessage(ctxMenuMsg)" style="cursor:pointer;padding:6px 10px" @click="ctxRecall">撤回</div>
               <div v-if="!isGlobalChat && canCollectEmoji(ctxMenuMsg)" style="cursor:pointer;padding:6px 10px" @click="ctxCollectEmoji">添加到表情包</div>
             </div>
@@ -605,6 +606,23 @@
               <template #footer>
                 <el-button v-if="groupIsOwner" type="danger" plain :loading="groupActionLoading" @click="dissolveGroupChat">解散群聊</el-button>
                 <el-button @click="groupManageVisible=false">关闭</el-button>
+              </template>
+            </el-dialog>
+
+            <el-dialog v-model="forwardDialogVisible" title="转发" width="420px" :close-on-click-modal="false" @close="cancelForwardDialog">
+              <div style="display:flex;flex-direction:column;gap:12px">
+                <div style="font-size:12px;color:var(--mc-text-secondary)">选择目标会话（不可转发到全服）</div>
+                <el-select v-model="forwardTargetChatId" placeholder="选择会话" filterable style="width:100%">
+                  <el-option v-for="c in forwardTargets" :key="c.id" :label="c.name" :value="c.id"></el-option>
+                </el-select>
+                <div style="font-size:12px;color:var(--mc-text-secondary)">内容预览</div>
+                <div style="border:1px solid var(--mc-border);border-radius:8px;padding:10px;background:var(--mc-surface);white-space:pre-wrap;word-break:break-word">
+                  {{ forwardSourcePreviewText(forwardSourceMsg) }}
+                </div>
+              </div>
+              <template #footer>
+                <el-button @click="cancelForwardDialog">取消</el-button>
+                <el-button type="primary" :loading="forwardSending" :disabled="!forwardTargetChatId" @click="confirmForward">转发</el-button>
               </template>
             </el-dialog>
           </el-main>

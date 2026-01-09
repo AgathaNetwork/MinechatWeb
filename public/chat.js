@@ -140,6 +140,175 @@ const app = createApp({
     const ctxMenuY = ref(0);
     const ctxMenuMsg = ref(null);
 
+    // Forward message
+    const forwardDialogVisible = ref(false);
+    const forwardSending = ref(false);
+    const forwardTargetChatId = ref('');
+    const forwardSourceMsg = ref(null);
+
+    const forwardTargets = computed(() => {
+      try {
+        const list = Array.isArray(chats.value) ? chats.value : [];
+        return list
+          .filter((c) => c && c.id !== undefined && c.id !== null && String(c.id) !== 'global')
+          .map((c) => {
+            const id = String(c.id);
+            const name = c.displayName || c.name || '会话';
+            return { id, name };
+          });
+      } catch (e) {
+        return [];
+      }
+    });
+
+    function forwardSourcePreviewText(m) {
+      try {
+        if (!m || typeof m !== 'object') return '';
+        const tag = messagePreviewTag(m);
+        const suffix = messagePreviewSuffix(m);
+        if (tag) return suffix ? `${tag} ${suffix}` : tag;
+        return messageTextPreview(m) || '消息';
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function buildForwardPayloadFromMessage(m) {
+      try {
+        if (!m || typeof m !== 'object') return null;
+        if (isRecalledMessage(m)) return null;
+
+        const t = String(m.type || '').toLowerCase();
+        const type = t || 'text';
+        let content = m.content;
+
+        // For file messages: must have a remote url (can't forward local-only blobs).
+        if (type === 'file') {
+          const c = content && typeof content === 'object' ? Object.assign({}, content) : null;
+          if (!c) return null;
+          if (!c.url) return null;
+          // drop local preview url
+          try { delete c.__localUrl; } catch (e0) {}
+          content = c;
+        }
+
+        // For video messages (if backend/client uses type=video): also require url.
+        if (type === 'video') {
+          const c = content && typeof content === 'object' ? Object.assign({}, content) : null;
+          if (!c) return null;
+          if (!c.url) return null;
+          try { delete c.__localUrl; } catch (e0) {}
+          content = c;
+        }
+
+        // For others, content can be string/object as-is.
+        return { type, content };
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function canForwardMessage(m) {
+      try {
+        if (!m || typeof m !== 'object') return false;
+        if (isRecalledMessage(m)) return false;
+        const t = String(m.type || '').toLowerCase();
+        if (t === 'recalled') return false;
+        if (t === 'text' || t === 'emoji' || t === 'sticker' || t === 'file' || t === 'coordinate' || t === 'player_card' || t === 'video') {
+          // ensure file/video has remote url
+          if (t === 'file' || t === 'video') {
+            const c = m.content;
+            return !!(c && typeof c === 'object' && (c.url || c.__localUrl));
+          }
+          return true;
+        }
+        // default: allow forwarding unknown types only if it has a safe preview string
+        return !!messageTextPreview(m);
+      } catch (e) {
+        return false;
+      }
+    }
+
+    async function openForwardDialog(msg) {
+      try {
+        if (isGlobalChat.value) return;
+        if (!canForwardMessage(msg)) {
+          try { ElementPlus.ElMessage.warning('该消息不支持转发'); } catch (e0) {}
+          return;
+        }
+
+        // Ensure chat list exists for selecting target.
+        if (!Array.isArray(chats.value) || chats.value.length === 0) {
+          try { await loadChats(); } catch (e1) {}
+        }
+
+        forwardSourceMsg.value = msg;
+        forwardTargetChatId.value = '';
+        forwardDialogVisible.value = true;
+      } catch (e) {
+        try { forwardDialogVisible.value = false; } catch (e2) {}
+      }
+    }
+
+    async function confirmForward() {
+      try {
+        const src = forwardSourceMsg.value;
+        const targetId = String(forwardTargetChatId.value || '').trim();
+        if (!src) return;
+        if (!targetId) return ElementPlus.ElMessage.warning('请选择目标会话');
+        if (targetId === 'global') return ElementPlus.ElMessage.warning('不可转发到全服聊天');
+
+        const target = (forwardTargets.value || []).find((x) => x && String(x.id) === targetId);
+        const targetName = target ? String(target.name || '') : '目标会话';
+
+        try {
+          await ElementPlus.ElMessageBox.confirm(
+            `确认转发到「${targetName}」？\n\n内容：${forwardSourcePreviewText(src)}`,
+            '转发',
+            {
+              confirmButtonText: '确认转发',
+              cancelButtonText: '取消',
+              type: 'warning',
+              closeOnClickModal: false,
+              closeOnPressEscape: true,
+            }
+          );
+        } catch (e2) {
+          return;
+        }
+
+        forwardSending.value = true;
+        const res = await safeFetch(`${apiBase.value}/messages/forward`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messageId: String(src.id || ''), chatId: String(targetId) }),
+        });
+        if (!res.ok) {
+          let err = '';
+          try {
+            const data = await res.json().catch(() => null);
+            err = data && (data.error || data.message) ? String(data.error || data.message) : '';
+          } catch (e3) {}
+          if (!err) err = `转发失败 (${res.status})`;
+          throw new Error(err);
+        }
+        await res.json().catch(() => null);
+        forwardDialogVisible.value = false;
+        ElementPlus.ElMessage.success('已转发');
+      } catch (e) {
+        const m = e && e.message ? String(e.message) : '转发失败';
+        try { ElementPlus.ElMessage.error(m); } catch (e2) {}
+      } finally {
+        forwardSending.value = false;
+      }
+    }
+
+    function cancelForwardDialog() {
+      try {
+        forwardDialogVisible.value = false;
+      } catch (e) {}
+    }
+
     const emojiPanelVisible = ref(false);
     const emojiPacks = ref([]);
 
@@ -3962,6 +4131,7 @@ const app = createApp({
       try {
         if (canCopyText(msg)) itemCount += 1;
         if (!isGlobal) itemCount += 1; // reply
+        if (!isGlobal && canForwardMessage(msg)) itemCount += 1;
         if (canRecallMessage(msg)) itemCount += 1;
         if (canCollectEmoji(msg)) itemCount += 1;
       } catch (e) {}
@@ -3992,6 +4162,16 @@ const app = createApp({
       if (!ctxMenuMsg.value) return;
       setReplyTarget(ctxMenuMsg.value);
       hideCtxMenu();
+    }
+
+    function ctxForward() {
+      try {
+        const msg = ctxMenuMsg.value;
+        hideCtxMenu();
+        openForwardDialog(msg);
+      } catch (e) {
+        try { hideCtxMenu(); } catch (e2) {}
+      }
     }
 
     async function ctxCopy() {
@@ -5241,6 +5421,16 @@ const app = createApp({
       ctxMenuX,
       ctxMenuY,
       ctxMenuMsg,
+      forwardDialogVisible,
+      forwardSending,
+      forwardTargetChatId,
+      forwardTargets,
+      forwardSourceMsg,
+      forwardSourcePreviewText,
+      canForwardMessage,
+      ctxForward,
+      confirmForward,
+      cancelForwardDialog,
 
       // helpers
       messageAuthorName,

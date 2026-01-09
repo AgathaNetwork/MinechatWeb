@@ -547,6 +547,18 @@ const app = createApp({
     const ctxMenuY = ref(0);
     const ctxMenuMsg = ref(null);
 
+    // Forward
+    const forwardDialogVisible = ref(false);
+    const forwardSending = ref(false);
+    const forwardTargetChatId = ref('');
+    const forwardSourceMsg = ref(null);
+    const forwardChats = ref([]); // chat list for selecting forward target
+
+    const forwardTargets = computed(() => {
+      const list = Array.isArray(forwardChats.value) ? forwardChats.value : [];
+      return list.filter((c) => c && String(c.id || '') && String(c.id) !== 'global');
+    });
+
     const mentionDialogVisible = ref(false);
     const mentionSelectAll = ref(false);
     const mentionSelectIds = ref([]); // [userId]
@@ -2497,6 +2509,7 @@ const app = createApp({
       try {
         if (canCopyText(m)) itemCount += 1;
         if (!isGlobalChat.value) itemCount += 1; // reply
+        if (!isGlobalChat.value && canForwardMessage(m)) itemCount += 1;
         if (canRecallMessage(m)) itemCount += 1;
         if (canCollectEmoji(m)) itemCount += 1;
       } catch (e) {}
@@ -2914,6 +2927,16 @@ const app = createApp({
       }
     }
 
+    function ctxForward() {
+      try {
+        const msg = ctxMenuMsg.value;
+        hideContextMenu();
+        openForwardDialog(msg);
+      } catch (e) {
+        try { hideContextMenu(); } catch (e2) {}
+      }
+    }
+
     function canCollectEmoji(m) {
       try {
         if (!m || typeof m !== 'object') return false;
@@ -2923,6 +2946,130 @@ const app = createApp({
       } catch (e) {
         return false;
       }
+    }
+
+    function canForwardMessage(m) {
+      try {
+        if (!m || typeof m !== 'object') return false;
+        if (isGlobalChat.value) return false;
+        if (isRecalledMessage(m)) return false;
+        if (!m.id) return false;
+        const id = String(m.id);
+        if (id.startsWith('local-') || id.startsWith('temp_')) return false;
+        if (m.__status === 'sending') return false;
+
+        const t = String(m.type || '').toLowerCase();
+        if (t === 'recalled') return false;
+
+        if (t === 'text' || t === 'emoji' || t === 'sticker' || t === 'coordinate' || t === 'player_card' || t === 'file' || t === 'video') {
+          if (t === 'file' || t === 'video') {
+            const c = m.content;
+            return !!(c && typeof c === 'object' && (c.url || c.__localUrl));
+          }
+          return true;
+        }
+
+        return !!String(messageTextPreview(m) || '').trim();
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function forwardSourcePreviewText(m) {
+      try {
+        if (!m) return '';
+        const tag = messagePreviewTag(m);
+        const suffix = messagePreviewSuffix(m);
+        if (tag) return suffix ? `[${tag}] ${suffix}` : `[${tag}]`;
+        const t = String(messagePreviewText(m) || messageTextPreview(m) || '').trim();
+        return t || '（消息）';
+      } catch (e) {
+        return '（消息）';
+      }
+    }
+
+    async function loadForwardChats() {
+      const res = await safeFetch(`${apiBase.value}/chats`);
+      if (!res.ok) throw new Error('load chats failed');
+      const list = await res.json().catch(() => []);
+      forwardChats.value = Array.isArray(list) ? list : [];
+    }
+
+    async function openForwardDialog(msg) {
+      try {
+        if (!canForwardMessage(msg)) {
+          try { ElementPlus.ElMessage.warning('该消息不支持转发'); } catch (e0) {}
+          return;
+        }
+        if (!Array.isArray(forwardChats.value) || forwardChats.value.length === 0) {
+          try { await loadForwardChats(); } catch (e1) {}
+        }
+        forwardSourceMsg.value = msg;
+        forwardTargetChatId.value = '';
+        forwardDialogVisible.value = true;
+      } catch (e) {
+        try { forwardDialogVisible.value = false; } catch (e2) {}
+      }
+    }
+
+    async function confirmForward() {
+      try {
+        if (forwardSending.value) return;
+        const src = forwardSourceMsg.value;
+        const targetId = String(forwardTargetChatId.value || '').trim();
+        if (!src) return;
+        if (!targetId) return ElementPlus.ElMessage.warning('请选择目标会话');
+        if (targetId === 'global') return ElementPlus.ElMessage.warning('不可转发到全服聊天');
+
+        const target = (forwardTargets.value || []).find((x) => x && String(x.id) === targetId);
+        const targetName = target ? String(target.displayName || target.name || '') : '目标会话';
+
+        try {
+          await ElementPlus.ElMessageBox.confirm(
+            `确认转发到「${targetName}」？\n\n内容：${forwardSourcePreviewText(src)}`,
+            '转发',
+            {
+              confirmButtonText: '确认转发',
+              cancelButtonText: '取消',
+              type: 'warning',
+              closeOnClickModal: false,
+              closeOnPressEscape: true,
+            }
+          );
+        } catch (e2) {
+          return;
+        }
+
+        forwardSending.value = true;
+        const res = await safeFetch(`${apiBase.value}/messages/forward`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messageId: String(src.id || ''), chatId: String(targetId) }),
+        });
+        if (!res.ok) {
+          let err = '';
+          try {
+            const data = await res.json().catch(() => null);
+            err = data && (data.error || data.message) ? String(data.error || data.message) : '';
+          } catch (e3) {}
+          if (!err) err = `转发失败 (${res.status})`;
+          throw new Error(err);
+        }
+        await res.json().catch(() => null);
+        forwardDialogVisible.value = false;
+        ElementPlus.ElMessage.success('已转发');
+      } catch (e) {
+        const m = e && e.message ? String(e.message) : '转发失败';
+        try { ElementPlus.ElMessage.error(m); } catch (e2) {}
+      } finally {
+        forwardSending.value = false;
+      }
+    }
+
+    function cancelForwardDialog() {
+      try {
+        forwardDialogVisible.value = false;
+      } catch (e) {}
     }
 
     function canCopyText(m) {
@@ -4272,6 +4419,7 @@ const app = createApp({
       ctxMenuMsg,
       canCollectEmoji,
       canCopyText,
+      canForwardMessage,
       canMentionFromMessage,
       ctxCollectEmoji,
       messageAuthorName,
@@ -4313,6 +4461,7 @@ const app = createApp({
       ctxReply,
       ctxCopy,
       ctxMention,
+      ctxForward,
       canRecallMessage,
       ctxRecall,
       setReplyTarget,
@@ -4351,6 +4500,17 @@ const app = createApp({
       toggleMentionSelected,
       confirmMentionDialog,
       cancelMentionDialog,
+
+      // forward
+      forwardDialogVisible,
+      forwardSending,
+      forwardTargetChatId,
+      forwardSourceMsg,
+      forwardTargets,
+      forwardSourcePreviewText,
+      openForwardDialog,
+      confirmForward,
+      cancelForwardDialog,
     };
   },
 });
