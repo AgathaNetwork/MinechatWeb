@@ -216,29 +216,12 @@ const app = createApp({
         ElementPlus.ElMessage.info('当前环境不支持清理 App 缓存');
         return;
       }
-      cacheBusy.value = true;
-      try {
-        const ok = await clearPlusCache();
-        if (ok) ElementPlus.ElMessage.success('已清理 App 缓存');
-        else ElementPlus.ElMessage.warning('未能清理 App 缓存（可能不支持）');
-        await refreshAppCache();
-      } finally {
-        cacheBusy.value = false;
-      }
-    }
 
-    function clearWebStorage() {
-      try { localStorage.clear(); } catch (e) {}
-      try { sessionStorage.clear(); } catch (e) {}
-      ElementPlus.ElMessage.success('已清理网页本地存储');
-    }
-
-    async function clearCookies() {
       try {
         if (ElementPlus && ElementPlus.ElMessageBox && ElementPlus.ElMessageBox.confirm) {
           await ElementPlus.ElMessageBox.confirm(
-            '清理 Cookie 后将丢失登录态，需要退出程序并重新登录。是否继续？',
-            '确认清理 Cookie',
+            '清理 App 缓存后将退出账号并重启 App，需要重新登录。是否继续？',
+            '确认清理 App 缓存',
             {
               confirmButtonText: '继续',
               cancelButtonText: '取消',
@@ -246,7 +229,74 @@ const app = createApp({
             }
           );
         } else {
-          const ok = window.confirm('清理 Cookie 后将丢失登录态，需要退出程序并重新登录。是否继续？');
+          const ok = window.confirm('清理 App 缓存后将退出账号并重启 App，需要重新登录。是否继续？');
+          if (!ok) return;
+        }
+      } catch (e) {
+        // 用户取消
+        return;
+      }
+
+      cacheBusy.value = true;
+      try {
+        const ok = await clearPlusCache();
+        if (ok) ElementPlus.ElMessage.success('已清理 App 缓存，即将重启 App');
+        else ElementPlus.ElMessage.warning('未能清理 App 缓存（可能不支持）');
+        await refreshAppCache();
+      } finally {
+        cacheBusy.value = false;
+      }
+
+      try {
+        setTimeout(() => logout(), 300);
+      } catch (e) {}
+    }
+
+    function clearWebStorage() {
+      (async () => {
+        try {
+          if (ElementPlus && ElementPlus.ElMessageBox && ElementPlus.ElMessageBox.confirm) {
+            await ElementPlus.ElMessageBox.confirm(
+              '清理网页本地存储后将退出账号并重启 App，需要重新登录。是否继续？',
+              '确认清理网页本地存储',
+              {
+                confirmButtonText: '继续',
+                cancelButtonText: '取消',
+                type: 'warning',
+              }
+            );
+          } else {
+            const ok = window.confirm('清理网页本地存储后将退出账号并重启 App，需要重新登录。是否继续？');
+            if (!ok) return;
+          }
+        } catch (e) {
+          // 用户取消
+          return;
+        }
+
+        try { localStorage.clear(); } catch (e) {}
+        try { sessionStorage.clear(); } catch (e) {}
+        ElementPlus.ElMessage.success('已清理网页本地存储，即将重启 App');
+        try {
+          setTimeout(() => logout(), 300);
+        } catch (e) {}
+      })();
+    }
+
+    async function clearCookies() {
+      try {
+        if (ElementPlus && ElementPlus.ElMessageBox && ElementPlus.ElMessageBox.confirm) {
+          await ElementPlus.ElMessageBox.confirm(
+            '清理 Cookie 后将退出账号并重启 App，且丢失登录态，需要重新登录。是否继续？',
+            '确认清理 Cookie（会退出账号并重启）',
+            {
+              confirmButtonText: '继续',
+              cancelButtonText: '取消',
+              type: 'warning',
+            }
+          );
+        } else {
+          const ok = window.confirm('清理 Cookie 后将退出账号并重启 App，且丢失登录态，需要重新登录。是否继续？');
           if (!ok) return;
         }
       } catch (e) {
@@ -266,10 +316,15 @@ const app = createApp({
         for (const n of uniq) {
           document.cookie = `${n}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
         }
-        ElementPlus.ElMessage.success('已尝试清理 Cookie，请退出程序后重新登录');
+        ElementPlus.ElMessage.success('已尝试清理 Cookie，即将重启 App');
       } catch (e) {
         ElementPlus.ElMessage.warning('清理 Cookie 失败');
+        return;
       }
+
+      try {
+        setTimeout(() => logout(), 300);
+      } catch (e) {}
     }
 
     function waitForPlusReady(timeoutMs) {
@@ -1166,7 +1221,14 @@ const app = createApp({
         localStorage.removeItem('username');
         localStorage.removeItem('faceUrl');
       } catch (e) {}
-      
+
+      try {
+        if (isAppEnv.value && window.plus && plus.runtime && typeof plus.runtime.restart === 'function') {
+          plus.runtime.restart();
+          return;
+        }
+      } catch (e) {}
+
       window.location.href = '/';
     }
 

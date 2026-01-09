@@ -47,6 +47,9 @@
       .mc-rich-input:empty:before{content:attr(data-placeholder);color:var(--el-text-color-placeholder);pointer-events:none}
       .mc-rich-input .mc-mention-chip{cursor:default;display:inline-flex;align-items:center;vertical-align:middle;max-width:100%;padding:0 8px;height:24px;line-height:24px;border-radius:var(--el-border-radius-base);border:1px solid var(--el-color-primary-light-7);background:var(--el-color-primary-light-9);color:var(--el-color-primary);user-select:none;white-space:nowrap;margin:0 6px 2px 0}
       .mc-rich-input .mc-mention-chip::selection{background:transparent}
+
+      .reply-quote{padding:6px 8px;border-left:3px solid var(--mc-border);background:var(--el-fill-color-lighter);margin:0 0 6px 0;border-radius:6px;width:100%;color:var(--mc-text)}
+      .reply-banner{padding:6px 8px;border-left:3px solid var(--mc-border);background:var(--el-fill-color-lighter);border-radius:6px;font-size:12px;display:flex;justify-content:space-between;align-items:center;color:var(--mc-text)}
     </style>
   </head>
   <body>
@@ -97,8 +100,7 @@
           <div :class="['msg-content-wrapper', m.__showTime ? 'show-time' : '']" @click="toggleMessageTime(m)" @touchstart="onTouchStart(m, $event)" @touchend="onTouchEnd" @touchmove="onTouchMove">
             <div style="font-size:11px;color:#888;margin-bottom:2px;padding:0 4px">{{ messageAuthorName(m) }}</div>
 
-            <div v-if="!isGlobalChat && m.replied_to && repliedRefMessage(m)" class="reply-quote"
-                 style="padding:6px 8px;border-left:3px solid #ccc;background:#f7f7f7;margin:0 0 6px 0;border-radius:6px;width:100%">
+            <div v-if="!isGlobalChat && m.replied_to && repliedRefMessage(m)" class="reply-quote">
               <span style="cursor:pointer" @click.stop="scrollToMessage((typeof m.replied_to==='object') ? (m.replied_to.id||'') : m.replied_to)">
                 {{ messageAuthorName(repliedRefMessage(m)) }}:
                 <template v-if="messagePreviewTag(repliedRefMessage(m))">
@@ -173,7 +175,7 @@
       </div>
 
       <div class="input-area" ref="inputAreaEl">
-        <div v-if="replyTarget" style="padding:6px 8px;background:#f7f7f7;border-radius:6px;font-size:12px;display:flex;justify-content:space-between;align-items:center;border-left:3px solid #ccc">
+        <div v-if="replyTarget" class="reply-banner">
           <span>
             回复:
             <template v-if="messagePreviewTag(replyTarget)">
