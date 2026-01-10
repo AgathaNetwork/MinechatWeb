@@ -2345,6 +2345,34 @@ const app = createApp({
           } catch (e) {}
         });
 
+        // 后端对全服消息使用事件名 `global.message.created`，同时监听该事件以保持与 message.created 相同的行为
+        s.on('global.message.created', async (msg) => {
+          try {
+            const chatId = 'global';
+            const current = currentChatId.value;
+
+            // 仅在全服页打开时将消息插入列表并处理 ACK/滚动等行为
+            if (!current) return;
+            if (String(chatId) !== String(current)) return;
+
+            const candidate = findOptimisticForAck(msg);
+            if (candidate && candidate.id) {
+              ackOptimisticMessage(candidate.id, msg, current === 'global');
+              await ensureUserCachesForMessages([msg], current === 'global');
+              return;
+            }
+
+            const stickToBottom = isScrolledNearBottom(messagesEl.value);
+            upsertIncomingMessage(msg);
+            await ensureUserCachesForMessages([msg], current === 'global');
+            try { queueReadForCurrentChat(); } catch (e0) {}
+            await nextTick();
+            if (stickToBottom && messagesEl.value) {
+              messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
+            }
+          } catch (e) {}
+        });
+
         async function onMessageUpdatedLike(payload) {
           try {
             const { chatId, message } = extractChatIdAndMessageFromUpdate(payload);

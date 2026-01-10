@@ -3286,6 +3286,34 @@ const app = createApp({
         } catch (e) {}
       });
 
+      // 监听后端的全服消息事件名，保持与 message.created 相同的本地行为
+      s.on('global.message.created', async (msg) => {
+        try {
+          // 如果当前打开的不是全服会话则忽略
+          if (!currentChatId.value || String(currentChatId.value) !== 'global') return;
+
+          if (isAuditRecalledMessage(msg)) return;
+
+          normalizeMessage(msg, true);
+          if (!msg.id) return;
+
+          if (msgById[msg.id]) {
+            try { Object.assign(msgById[msg.id], msg); } catch (e) {}
+            return;
+          }
+
+          const optimistic = findOptimisticForAck(msg);
+          if (optimistic && optimistic.id) {
+            ackOptimisticMessage(optimistic.id, msg, true);
+          } else {
+            msgById[msg.id] = msg;
+            messages.value.push(msg);
+          }
+
+          await nextTick();
+        } catch (e) {}
+      });
+
       function onMessageUpdatedLike(payload) {
         try {
           const chatId = payload && (payload.chatId || payload.chat_id);

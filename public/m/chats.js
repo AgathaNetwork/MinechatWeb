@@ -527,6 +527,14 @@ const app = createApp({
           } catch (e) {}
         });
 
+        // 服务器全服消息事件名为 `global.message.created`，移动端监听并更新全服未读标记
+        s.on('global.message.created', async (msg) => {
+          try {
+            // 移动端：仅在全服详情页打开时需要插入消息，列表页不再标记未读
+            // 如需刷新列表（例如显示最新 preview），可在此处调用 loadChats/hydrate，但不设置未读
+          } catch (e) {}
+        });
+
         function onMessageUpdatedLike(payload) {
           try {
             const updated = payload && payload.message ? payload.message : payload;
