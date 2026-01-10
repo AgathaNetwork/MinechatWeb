@@ -8,9 +8,12 @@
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="/vendor/element-plus/index.css" />
     <link rel="stylesheet" href="/vendor/element-plus/theme-chalk/dark/css-vars.css" />
+    <style>
+      [v-cloak]{display:none}
+    </style>
   </head>
   <body>
-    <div id="app">
+    <div id="app" v-cloak>
       <el-container style="height:100vh">
         <el-header style="display:flex;align-items:center;justify-content:space-between">
           <div style="display:flex;align-items:center;gap:16px">
