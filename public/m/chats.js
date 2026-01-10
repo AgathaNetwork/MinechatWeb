@@ -789,6 +789,8 @@ const app = createApp({
       const content = msg.content;
 
       try {
+        if (String(msg.type || '') === 'audit_recalled') return '';
+        if (content && typeof content === 'object' && content.auditRecalled === true) return '';
         if (String(msg.type || '') === 'recalled') return '[消息已撤回]';
         if (content && typeof content === 'object' && content.recalled === true) return '[消息已撤回]';
       } catch (e) {}
@@ -835,9 +837,22 @@ const app = createApp({
       }
     }
 
+    function isAuditRecalledMessage(m) {
+      try {
+        if (!m || typeof m !== 'object') return false;
+        if (String(m.type || '') === 'audit_recalled') return true;
+        const c = m.content;
+        if (c && typeof c === 'object' && c.auditRecalled === true) return true;
+        return false;
+      } catch (e) {
+        return false;
+      }
+    }
+
     function previewTagAndSuffixFromMessage(m) {
       try {
         if (!m || typeof m !== 'object') return { tag: '', suffix: '' };
+        if (isAuditRecalledMessage(m)) return { tag: '', suffix: '' };
         if (isRecalledMessage(m)) return { tag: '已撤回', suffix: '' };
 
         const t = String(m.type || '').toLowerCase();

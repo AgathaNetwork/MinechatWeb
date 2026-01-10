@@ -1897,6 +1897,18 @@ const app = createApp({
       }
     }
 
+    function isAuditRecalledMessage(m) {
+      try {
+        if (!m || typeof m !== 'object') return false;
+        if (String(m.type || '') === 'audit_recalled') return true;
+        const c = m.content;
+        if (c && typeof c === 'object' && c.auditRecalled === true) return true;
+        return false;
+      } catch (e) {
+        return false;
+      }
+    }
+
     function recallNoticeText(m) {
       try {
         if (!m) return '消息已撤回';
@@ -1910,6 +1922,7 @@ const app = createApp({
 
     function messageTextPreview(m) {
       if (!m) return '';
+      if (isAuditRecalledMessage(m)) return '';
       if (isRecalledMessage(m)) return '[消息已撤回]';
       if (m.type === 'text') {
         const t = (m.content && (m.content.text !== undefined ? m.content.text : m.content)) || '';
@@ -2556,6 +2569,18 @@ const app = createApp({
       try {
         if (!updated || typeof updated !== 'object') return;
         if (!updated.id) return;
+
+        if (isAuditRecalledMessage(updated)) {
+          const mid = String(updated.id);
+          try { delete msgById[mid]; } catch (e0) {}
+          try {
+            const list = Array.isArray(messages.value) ? messages.value : [];
+            const next = list.filter((m) => !(m && m.id && String(m.id) === mid));
+            if (next.length !== list.length) messages.value = next;
+          } catch (e1) {}
+          return;
+        }
+
         normalizeMessage(updated, chatId === 'global');
         if (msgById[updated.id]) {
           try { Object.assign(msgById[updated.id], updated); } catch (e) {}
@@ -3230,6 +3255,8 @@ const app = createApp({
           if (!currentChatId.value) return;
           if (chatId && String(chatId) !== String(currentChatId.value)) return;
 
+          if (isAuditRecalledMessage(msg)) return;
+
           normalizeMessage(msg, currentChatId.value === 'global');
           if (!msg.id) return;
 
@@ -3565,12 +3592,15 @@ const app = createApp({
         // Safety: if backend ignores limit and returns full history, only render latest initial page.
         if (Array.isArray(msgs) && msgs.length > INITIAL_LIMIT) msgs = msgs.slice(-INITIAL_LIMIT);
 
+        // Silent audit recall: never render these messages.
+        if (Array.isArray(msgs)) msgs = msgs.filter((m) => !isAuditRecalledMessage(m));
+
         messages.value = [];
         for (const k of Object.keys(msgById)) delete msgById[k];
 
         msgs.forEach(m => {
           normalizeMessage(m, isGlobal);
-          if (m.id) msgById[m.id] = m;
+          if (m && m.id && !isAuditRecalledMessage(m)) msgById[m.id] = m;
         });
         messages.value = msgs;
         noMoreBefore.value = !Array.isArray(msgs) || msgs.length < INITIAL_LIMIT;
@@ -3614,18 +3644,20 @@ const app = createApp({
 
         const res = await safeFetch(url);
         if (!res.ok) throw new Error('load more failed');
-        const more = await res.json().catch(() => null);
+        let more = await res.json().catch(() => null);
         if (!Array.isArray(more) || more.length === 0) {
           noMoreBefore.value = true;
           return;
         }
 
+        if (Array.isArray(more)) more = more.filter((m) => !isAuditRecalledMessage(m));
+
         more.forEach((m) => {
           normalizeMessage(m, isGlobal);
-          if (m && m.id) msgById[m.id] = m;
+          if (m && m.id && !isAuditRecalledMessage(m)) msgById[m.id] = m;
         });
 
-        messages.value = more.concat(messages.value).map((m) => normalizeMessage(m, isGlobal));
+        messages.value = more.concat(messages.value).filter((m) => !isAuditRecalledMessage(m)).map((m) => normalizeMessage(m, isGlobal));
 
         await nextTick();
         const newScrollHeight = messagesEl.value.scrollHeight;

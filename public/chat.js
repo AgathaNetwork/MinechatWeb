@@ -1934,6 +1934,12 @@ const app = createApp({
     function upsertIncomingMessage(msg) {
       if (!msg || typeof msg !== 'object') return;
 
+      // Silent audit recall: do not render at all.
+      if (isAuditRecalledMessage(msg)) {
+        try { removeLocalMessageById(String(msg.id || '')); } catch (e) {}
+        return;
+      }
+
       // normalize fields so UI can render
       normalizeMessage(msg, currentChatId.value === 'global');
 
@@ -1949,6 +1955,17 @@ const app = createApp({
 
       msgById[id] = msg;
       messages.value = messages.value.concat([msg]);
+    }
+
+    function removeLocalMessageById(messageId) {
+      try {
+        const mid = messageId !== undefined && messageId !== null ? String(messageId) : '';
+        if (!mid) return;
+        try { delete msgById[mid]; } catch (e0) {}
+        const list = Array.isArray(messages.value) ? messages.value : [];
+        const next = list.filter((m) => !(m && m.id && String(m.id) === mid));
+        if (next.length !== list.length) messages.value = next;
+      } catch (e) {}
     }
 
     function contentSignature(m) {
@@ -2655,6 +2672,7 @@ const app = createApp({
     function formatLastMessage(chat) {
       if (!chat || !chat.lastMessage) return '';
       const msg = chat.lastMessage;
+      if (isAuditRecalledMessage(msg)) return '';
       const text = messageTextPreview(msg);
       if (text) return text.length > 20 ? text.substring(0, 20) + '...' : text;
       if (msg.type === 'emoji') return '[表情]';
@@ -2741,6 +2759,7 @@ const app = createApp({
     function previewTagAndSuffixFromMessage(m) {
       try {
         if (!m || typeof m !== 'object') return { tag: '', suffix: '', text: '' };
+        if (isAuditRecalledMessage(m)) return { tag: '', suffix: '', text: '' };
         if (isRecalledMessage(m)) return { tag: '已撤回', suffix: '', text: '' };
 
         const t = String(m.type || '').toLowerCase();
@@ -3521,10 +3540,23 @@ const app = createApp({
     function bubbleBackground(m) {
       // Use theme variables so it works for both light & dark.
       if (!m) return 'var(--mc-surface)';
+      if (isAuditRecalledMessage(m)) return 'var(--mc-surface)';
       if (isRecalledMessage(m)) return 'var(--el-fill-color-lighter)';
       if (m.__status === 'sending') return 'var(--mc-active-bg)';
       if (m.__status === 'failed') return 'var(--el-color-danger-light-9)';
       return 'var(--mc-surface)';
+    }
+
+    function isAuditRecalledMessage(m) {
+      try {
+        if (!m || typeof m !== 'object') return false;
+        if (String(m.type || '') === 'audit_recalled') return true;
+        const c = m.content;
+        if (c && typeof c === 'object' && c.auditRecalled === true) return true;
+        return false;
+      } catch (e) {
+        return false;
+      }
     }
 
     function isRecalledMessage(m) {
@@ -3588,6 +3620,7 @@ const app = createApp({
 
     function messageTextPreview(m) {
       if (!m) return '';
+      if (isAuditRecalledMessage(m)) return '';
       if (isRecalledMessage(m)) return '[消息已撤回]';
       if (String(m.type || '').toLowerCase() === 'coordinate') {
         try {
@@ -3758,6 +3791,18 @@ const app = createApp({
         if (!updated || typeof updated !== 'object') return;
         const id = updated.id;
         if (!id) return;
+
+        // Silent audit recall: remove from list entirely.
+        if (isAuditRecalledMessage(updated)) {
+          removeLocalMessageById(String(id));
+          if (chatId && chatId !== 'global') {
+            const chat = (chats.value || []).find((c) => c && String(c.id) === String(chatId));
+            if (chat && chat.lastMessage && chat.lastMessage.id && String(chat.lastMessage.id) === String(id)) {
+              chat.lastMessage = null;
+            }
+          }
+          return;
+        }
 
         // normalize fields so UI can render
         normalizeMessage(updated, chatId === 'global');
@@ -4471,13 +4516,16 @@ const app = createApp({
         // Safety: if backend ignores limit and returns full history, only render latest page.
         if (Array.isArray(msgs) && msgs.length > PAGE_LIMIT) msgs = msgs.slice(-PAGE_LIMIT);
 
+        // Silent audit recall: never render these messages.
+        if (Array.isArray(msgs)) msgs = msgs.filter((m) => !isAuditRecalledMessage(m));
+
         // reset maps
         messages.value = [];
         for (const k of Object.keys(msgById)) delete msgById[k];
 
         msgs.forEach((m) => {
           normalizeMessage(m, isGlobal);
-          if (m && m.id) msgById[m.id] = m;
+          if (m && m.id && !isAuditRecalledMessage(m)) msgById[m.id] = m;
         });
 
         const userIds = new Set();
@@ -4491,7 +4539,7 @@ const app = createApp({
         });
         await fetchMissingUserNames(userIds);
 
-        messages.value = msgs.slice().map((m) => normalizeMessage(m, isGlobal));
+        messages.value = msgs.slice().filter((m) => !isAuditRecalledMessage(m)).map((m) => normalizeMessage(m, isGlobal));
         noMoreBefore.value = !Array.isArray(msgs) || msgs.length < PAGE_LIMIT;
 
         await nextTick();
@@ -4542,15 +4590,18 @@ const app = createApp({
 
         const res = await safeFetch(url);
         if (!res.ok) throw new Error('加载更多消息失败');
-        const more = await res.json();
+        let more = await res.json();
         if (!more || more.length === 0) {
           noMoreBefore.value = true;
           return;
         }
 
+        // Silent audit recall: never render these messages.
+        if (Array.isArray(more)) more = more.filter((m) => !isAuditRecalledMessage(m));
+
         more.forEach((m) => {
           normalizeMessage(m, isGlobal);
-          if (m && m.id) msgById[m.id] = m;
+          if (m && m.id && !isAuditRecalledMessage(m)) msgById[m.id] = m;
         });
 
         const moreUserIds = new Set();
@@ -4564,7 +4615,7 @@ const app = createApp({
         });
         await fetchMissingUserNames(moreUserIds);
 
-        messages.value = more.concat(messages.value).map((m) => normalizeMessage(m, isGlobal));
+        messages.value = more.concat(messages.value).filter((m) => !isAuditRecalledMessage(m)).map((m) => normalizeMessage(m, isGlobal));
 
         await nextTick();
         const newScrollHeight = messagesEl.value.scrollHeight;
