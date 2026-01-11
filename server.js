@@ -5,6 +5,7 @@ const yaml = require('js-yaml');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 
 const app = express();
+const http = require('http');
 
 const configPath = path.join(__dirname, 'config.yml');
 let config = { api_host: 'http://localhost', api_port: 3000, frontend_port: 4000 };
@@ -20,6 +21,14 @@ const port = config.frontend_port || 4000;
 
 // Same-origin API proxy to avoid browser CORS/preflight issues.
 // Frontend should call `/api/...` and this server forwards to `apiBase`.
+
+// 反代API
+// 简单请求日志，便于调试是否有到达本地代理
+app.use((req, res, next) => {
+  try { console.log('[proxy] incoming', req.method, req.url); } catch (e) {}
+  next();
+});
+
 app.use(
   '/api',
   createProxyMiddleware({
@@ -27,20 +36,32 @@ app.use(
     changeOrigin: true,
     ws: true,
     secure: false,
+    logLevel: 'debug',
     pathRewrite: (path) => {
-      // Backend is mounted at /chats/... (not /api/chats), so strip /api prefix.
-      // Also map our /api/socket.io -> backend /socket.io
+      // support socket.io and notify paths explicitly
       if (path.startsWith('/api/socket.io')) return path.replace('/api/socket.io', '/socket.io');
+      if (path.startsWith('/api/notify')) return path.replace('/api/notify', '/notify');
       return path.replace(/^\/api/, '');
     },
     cookieDomainRewrite: '',
+    onProxyReq: (proxyReq, req, res) => {
+      try { console.debug('[proxy] onProxyReq', req.method, req.url); } catch (e) {}
+    },
+    onProxyReqWs: (proxyReq, req, socket, options, head) => {
+      try { console.debug('[proxy] onProxyReqWs upgrade', req.url); } catch (e) {}
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      try { console.debug('[proxy] onProxyRes', req.method, req.url, proxyRes.statusCode); } catch (e) {}
+    },
     onError: (err, req, res) => {
       try {
         console.error('[proxy] error', err && err.message ? err.message : err);
       } catch (e) {}
       try {
-        res.writeHead(502, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Bad gateway', message: String(err && err.message ? err.message : err) }));
+        if (res && !res.headersSent) {
+          res.writeHead(502, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Bad gateway', message: String(err && err.message ? err.message : err) }));
+        }
       } catch (e) {}
     },
   })
@@ -56,6 +77,13 @@ app.get('/config', (req, res) => {
 
 app.get('/health', (req, res) => res.json({ ok: true, apiBase }));
 
-app.listen(port, () => {
+const server = http.createServer(app);
+
+// 记录 upgrade 事件，帮助调试 WebSocket 升级请求
+server.on('upgrade', (req, socket, head) => {
+  try { console.log('[proxy] upgrade', req.url); } catch (e) {}
+});
+
+server.listen(port, () => {
   console.log(`Frontend running on http://localhost:${port}  — API: ${apiBase}`);
 });
