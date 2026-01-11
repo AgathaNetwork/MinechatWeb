@@ -224,6 +224,7 @@
         <div v-if="!isGlobalChat && canForwardMessage(ctxMenuMsg)" class="ctx-menu-item" @click="ctxForward">转发</div>
         <div v-if="!isGlobalChat && canRecallMessage(ctxMenuMsg)" class="ctx-menu-item" @click="ctxRecall">撤回</div>
         <div v-if="!isGlobalChat && canCollectEmoji(ctxMenuMsg)" class="ctx-menu-item" @click="ctxCollectEmoji">添加到表情包</div>
+        <div v-if="canSaveAttachment(ctxMenuMsg)" class="ctx-menu-item" @click="ctxSave">保存</div>
       </div>
 
       <el-dialog

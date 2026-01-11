@@ -332,6 +332,7 @@
               <div v-if="!isGlobalChat && canForwardMessage(ctxMenuMsg)" style="cursor:pointer;padding:6px 10px" @click="ctxForward">转发</div>
               <div v-if="!isGlobalChat && canRecallMessage(ctxMenuMsg)" style="cursor:pointer;padding:6px 10px" @click="ctxRecall">撤回</div>
               <div v-if="!isGlobalChat && canCollectEmoji(ctxMenuMsg)" style="cursor:pointer;padding:6px 10px" @click="ctxCollectEmoji">添加到表情包</div>
+              <div v-if="canSaveAttachment(ctxMenuMsg)" style="cursor:pointer;padding:6px 10px" @click="ctxSave">保存</div>
             </div>
 
             <div v-if="replyTarget" style="margin-top:10px;padding:8px;border-left:3px solid var(--mc-border);background:var(--el-fill-color-lighter);border-radius:6px">

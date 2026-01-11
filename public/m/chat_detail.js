@@ -2924,6 +2924,71 @@ const app = createApp({
       }
     }
 
+    function canSaveAttachment(m) {
+      try {
+        if (!m || typeof m !== 'object') return false;
+        if (isRecalledMessage(m)) return false;
+        const t = String(m.type || '').toLowerCase();
+        if (t === 'file' || t === 'video' || t === 'emoji' || t === 'sticker') {
+          const url = fileOriginalUrl(m) || fileDisplayUrl(m);
+          return !!(url && String(url).trim());
+        }
+        if (isImageFile(m) || isVideoFile(m)) {
+          const url = fileOriginalUrl(m) || fileDisplayUrl(m);
+          return !!(url && String(url).trim());
+        }
+        return false;
+      } catch (e) { return false; }
+    }
+
+    async function downloadAttachment(msg) {
+      try {
+        if (!msg) throw new Error('empty');
+        const url = fileOriginalUrl(msg) || fileDisplayUrl(msg);
+        if (!url) throw new Error('no url');
+        let filename = (msg.content && (msg.content.filename || msg.content.name)) || '';
+        if (!filename) {
+          try {
+            const u = new URL(url, window.location.href);
+            const seg = (u.pathname || '').split('/').filter(Boolean).pop() || '';
+            filename = seg || (u.search ? ('file' + u.search) : 'download');
+          } catch (e) {
+            filename = 'download';
+          }
+        }
+
+        try {
+          const res = await fetch(url, { credentials: 'include' });
+          if (!res.ok) throw new Error('fetch failed');
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => { try { URL.revokeObjectURL(blobUrl); } catch (e) {} }, 5000);
+          try { document.body.removeChild(a); } catch (e) {}
+          return;
+        } catch (e) {
+          window.open(url, '_blank');
+          return;
+        }
+      } catch (e) {
+        try { ElementPlus.ElMessage.error('保存失败'); } catch (e2) {}
+      }
+    }
+
+    async function ctxSave() {
+      try {
+        const msg = ctxMenuMsg.value;
+        if (!canSaveAttachment(msg)) return;
+        hideContextMenu();
+        await downloadAttachment(msg);
+        try { ElementPlus.ElMessage.success('已开始下载'); } catch (e) {}
+      } catch (e) {}
+    }
+
     function canMentionFromMessage(m) {
       try {
         if (isGlobalChat.value) return false;
@@ -4534,6 +4599,9 @@ const app = createApp({
       messageFilename,
       fileDisplayUrl,
       fileOriginalUrl,
+      canSaveAttachment,
+      downloadAttachment,
+      ctxSave,
       bubbleBackground,
       formatTime,
       shouldShowTimeDivider,
