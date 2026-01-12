@@ -60,6 +60,11 @@ createApp({
           if (token) {
             try { localStorage.setItem('token', token); } catch (e) {}
             tokenInput.value = token;
+            // Try to notify outer container (electron / app shell / parent) about the token
+            try {
+              console.log('[login] obtained token, calling sendTokenToHost', token && token.slice ? token.slice(0,8)+'...' : token);
+              sendTokenToHost(token);
+            } catch (e) { console.warn('[login] sendTokenToHost failed', e); }
           }
           if (username) {
             try { localStorage.setItem('username', username); } catch (e) {}
@@ -144,7 +149,63 @@ createApp({
       const t = tokenInput.value.trim();
       if (!t) return ElementPlus.ElMessage.warning('请输入 token');
       localStorage.setItem('token', t);
+      try { console.log('[login] applyToken calling sendTokenToHost', t && t.slice ? t.slice(0,8)+'...' : t); sendTokenToHost(t); } catch (e) { console.warn('[login] sendTokenToHost failed', e); }
       gotoChat();
+    }
+
+    function sendTokenToHost(token) {
+      const msg = { type: 'minechat-token', token: String(token || '') };
+      // Attempt various common host-bridge mechanisms, logging each attempt
+      try {
+        if (window.postMessage) {
+          try {
+            console.log('[login] sendTokenToHost: calling window.postMessage', msg);
+            window.postMessage(msg, '*');
+          } catch (e) { console.warn('[login] window.postMessage failed', e); }
+        } else {
+          console.log('[login] sendTokenToHost: window.postMessage not available');
+        }
+      } catch (e) { console.warn('[login] sendTokenToHost postMessage error', e); }
+
+      try {
+        if (window.top && window.top !== window && window.top.postMessage) {
+          try {
+            console.log('[login] sendTokenToHost: calling window.top.postMessage', msg);
+            window.top.postMessage(msg, '*');
+          } catch (e) { console.warn('[login] window.top.postMessage failed', e); }
+        } else {
+          console.log('[login] sendTokenToHost: window.top.postMessage not available or same as window');
+        }
+      } catch (e) { console.warn('[login] sendTokenToHost top.postMessage error', e); }
+
+      try {
+        if (window.parent && window.parent !== window && window.parent.postMessage) {
+          try {
+            console.log('[login] sendTokenToHost: calling window.parent.postMessage', msg);
+            window.parent.postMessage(msg, '*');
+          } catch (e) { console.warn('[login] window.parent.postMessage failed', e); }
+        } else {
+          console.log('[login] sendTokenToHost: window.parent.postMessage not available or same as window');
+        }
+      } catch (e) { console.warn('[login] sendTokenToHost parent.postMessage error', e); }
+
+      try {
+        if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
+          console.log('[login] sendTokenToHost: posting to chrome.webview.postMessage', msg);
+          window.chrome.webview.postMessage(msg);
+        } else {
+          console.log('[login] sendTokenToHost: chrome.webview.postMessage not available');
+        }
+      } catch (e) { console.warn('[login] sendTokenToHost chrome.webview error', e); }
+
+      try {
+        if (window.external && typeof window.external.invoke === 'function') {
+          console.log('[login] sendTokenToHost: calling window.external.invoke', msg);
+          window.external.invoke(JSON.stringify(msg));
+        } else {
+          console.log('[login] sendTokenToHost: window.external.invoke not available');
+        }
+      } catch (e) { console.warn('[login] sendTokenToHost external.invoke error', e); }
     }
 
     onMounted(async () => {
