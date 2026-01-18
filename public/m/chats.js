@@ -12,6 +12,7 @@ const app = createApp({
     const selfFaceUrl = ref('');
     const userNameCache = reactive({});
     const userFaceCache = reactive({});
+    const chatFaceCache = reactive({}); // chatId -> avatarUrl (group)
     const userFetchInFlight = reactive({});
 
     // --- Chats list cache (App: sqlite via plus.sqlite; fallback: localStorage) ---
@@ -69,11 +70,54 @@ const app = createApp({
     async function saveChatsCacheNow(list) {
       try {
         const key = chatListCacheKey();
+
+        // Snapshot faces/names for fast first paint (avoid blank avatars before profile hydration).
+        const userFaces = {};
+        const userNames = {};
+        const chatFaces = {};
+        try {
+          const arr = Array.isArray(list) ? list : [];
+          for (const c of arr) {
+            if (!c || c.id === undefined || c.id === null) continue;
+            const cid = String(c.id);
+
+            try {
+              const t = c.type !== undefined && c.type !== null ? String(c.type).toLowerCase() : '';
+              if (t === 'group') {
+                const av = chatFaceCache[cid] || extractChatAvatarUrl(c);
+                if (av) chatFaces[cid] = String(av);
+              }
+            } catch (e0) {}
+
+            try {
+              const peerId = getChatPeerId(c);
+              if (peerId) {
+                const pid = String(peerId);
+                const face = userFaceCache[pid];
+                const name = userNameCache[pid];
+                if (face) userFaces[pid] = String(face);
+                if (name) userNames[pid] = String(name);
+              }
+            } catch (e1) {}
+          }
+
+          if (selfUserId.value) {
+            const sid = String(selfUserId.value);
+            if (selfFaceUrl.value) userFaces[sid] = String(selfFaceUrl.value);
+            if (userNameCache[sid]) userNames[sid] = String(userNameCache[sid]);
+          }
+        } catch (e) {}
+
         const payload = {
           v: CHAT_LIST_CACHE_VERSION,
           t: Date.now(),
           apiBase: String(apiBase.value || ''),
           chats: Array.isArray(list) ? list : [],
+          selfUserId: selfUserId.value ? String(selfUserId.value) : null,
+          selfFaceUrl: selfFaceUrl.value || '',
+          userFaces,
+          userNames,
+          chatFaces,
         };
 
         const mc = getMcCache();
@@ -93,6 +137,35 @@ const app = createApp({
         if (cached.apiBase && !apiBase.value) {
           apiBase.value = String(cached.apiBase);
         }
+
+        // Restore face/name snapshots for immediate avatar rendering.
+        try {
+          if (cached.selfUserId && !selfUserId.value) selfUserId.value = String(cached.selfUserId);
+          if (cached.selfFaceUrl && !selfFaceUrl.value) selfFaceUrl.value = String(cached.selfFaceUrl);
+
+          const uf = cached.userFaces && typeof cached.userFaces === 'object' ? cached.userFaces : null;
+          if (uf) {
+            for (const [id, url] of Object.entries(uf)) {
+              if (!id || !url) continue;
+              if (!userFaceCache[id]) userFaceCache[id] = String(url);
+            }
+          }
+          const un = cached.userNames && typeof cached.userNames === 'object' ? cached.userNames : null;
+          if (un) {
+            for (const [id, name] of Object.entries(un)) {
+              if (!id || !name) continue;
+              if (!userNameCache[id]) userNameCache[id] = String(name);
+            }
+          }
+          const cf = cached.chatFaces && typeof cached.chatFaces === 'object' ? cached.chatFaces : null;
+          if (cf) {
+            for (const [cid, url] of Object.entries(cf)) {
+              if (!cid || !url) continue;
+              if (!chatFaceCache[cid]) chatFaceCache[cid] = String(url);
+            }
+          }
+        } catch (e1) {}
+
         chats.value = sortChatsList(cached.chats);
         return Array.isArray(chats.value) && chats.value.length > 0;
       } catch (e) {
@@ -283,6 +356,19 @@ const app = createApp({
         if (!res.ok) return;
         const raw = await res.json();
         chats.value = sortChatsList(raw);
+
+        // Update group avatar cache snapshot.
+        try {
+          const arr = Array.isArray(chats.value) ? chats.value : [];
+          for (const c of arr) {
+            if (!c || c.id === undefined || c.id === null) continue;
+            const cid = String(c.id);
+            const t = c.type !== undefined && c.type !== null ? String(c.type).toLowerCase() : '';
+            if (t !== 'group') continue;
+            const av = extractChatAvatarUrl(c);
+            if (av) chatFaceCache[cid] = String(av);
+          }
+        } catch (e0) {}
 
         try { saveChatsCacheNow(chats.value); } catch (e0) {}
 
@@ -765,6 +851,9 @@ const app = createApp({
         }
         await Promise.all(Array.from(ids).map((id) => fetchUserById(id)));
       } catch (e) {}
+
+      // Persist improved avatar/name snapshot.
+      try { saveChatsCacheNow(chats.value); } catch (e) {}
     }
 
     async function resolveSelfProfile() {
@@ -786,6 +875,8 @@ const app = createApp({
           if (selfUserId.value) userFaceCache[String(selfUserId.value)] = face;
         }
       } catch (e) {}
+
+      try { saveChatsCacheNow(chats.value); } catch (e) {}
     }
 
     function getChatPeerId(chat) {
@@ -838,6 +929,10 @@ const app = createApp({
       try {
         const t = chat && chat.type !== undefined && chat.type !== null ? String(chat.type).toLowerCase() : '';
         if (t === 'group') {
+          try {
+            const cid = chat && chat.id !== undefined && chat.id !== null ? String(chat.id) : '';
+            if (cid && chatFaceCache[cid]) return String(chatFaceCache[cid]);
+          } catch (e0) {}
           const a = extractChatAvatarUrl(chat);
           if (a) return a;
         }

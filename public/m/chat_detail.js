@@ -260,6 +260,44 @@ const app = createApp({
           .map(stripForCacheMessage)
           .filter(Boolean);
 
+        // Snapshot minimal user profile cache for fast avatar/name rendering.
+        const userIds = new Set();
+        try {
+          if (selfUserId.value) userIds.add(String(selfUserId.value));
+          const meta = currentChatMeta.value;
+          const members = meta && (meta.members || meta.memberIds || meta.member_ids);
+          if (Array.isArray(members)) {
+            for (const m of members) {
+              const id = m !== undefined && m !== null ? String(m) : '';
+              if (id) userIds.add(id);
+            }
+          }
+        } catch (e) {}
+
+        try {
+          for (const m of cachedMsgs) {
+            const from = m && (m.from_user ?? m.fromUser ?? m.from);
+            if (from !== undefined && from !== null && String(from)) userIds.add(String(from));
+          }
+        } catch (e) {}
+
+        const users = {};
+        try {
+          const arr = Array.from(userIds.values()).filter(Boolean).slice(0, 120);
+          for (const id of arr) {
+            const name = userNameCache[id];
+            const face = userFaceCache[id];
+            const mc = userMinecraftCache[id];
+            if (name || face || mc) {
+              users[id] = {
+                name: name || '',
+                faceUrl: face || '',
+                minecraft: mc || '',
+              };
+            }
+          }
+        } catch (e) {}
+
         const payload = {
           v: CHAT_CACHE_VERSION,
           t: Date.now(),
@@ -268,6 +306,8 @@ const app = createApp({
           faceUrl: currentChatFaceUrl.value || '',
           meta: currentChatMeta.value && typeof currentChatMeta.value === 'object' ? currentChatMeta.value : null,
           messages: cachedMsgs,
+          users,
+          selfUserId: selfUserId.value ? String(selfUserId.value) : null,
         };
 
         const mc = getMcCache();
@@ -326,16 +366,51 @@ const app = createApp({
         const cached = await loadChatCache(chatId);
         if (!cached) return false;
 
+        // Restore selfUserId ASAP to avoid cached messages rendering on the wrong side.
+        try {
+          if (!selfUserId.value) {
+            const sid =
+              (cached.selfUserId !== undefined && cached.selfUserId !== null && String(cached.selfUserId)
+                ? String(cached.selfUserId)
+                : null) || tryExtractSelfUserIdFromToken();
+            if (sid) selfUserId.value = String(sid);
+          }
+        } catch (e0) {}
+
         const cid = String(chatId);
         currentChatId.value = cid;
         currentChatTitle.value = String(cached.title || currentChatTitle.value || '');
         currentChatFaceUrl.value = String(cached.faceUrl || currentChatFaceUrl.value || '');
         currentChatMeta.value = cached.meta && typeof cached.meta === 'object' ? cached.meta : currentChatMeta.value;
 
+        // Restore cached user name/face map for instant avatar rendering.
+        try {
+          const u = cached.users && typeof cached.users === 'object' ? cached.users : null;
+          if (u) {
+            for (const [id, info] of Object.entries(u)) {
+              if (!id) continue;
+              const obj = info && typeof info === 'object' ? info : null;
+              if (!obj) continue;
+              if (obj.name && !userNameCache[id]) userNameCache[id] = String(obj.name);
+              if (obj.faceUrl && !userFaceCache[id]) userFaceCache[id] = String(obj.faceUrl);
+              if (obj.minecraft && !userMinecraftCache[id]) userMinecraftCache[id] = String(obj.minecraft);
+            }
+          }
+        } catch (e) {}
+
         const isGlobal = cid === 'global';
         const list = (Array.isArray(cached.messages) ? cached.messages : [])
           .filter((m) => m && m.id && !isAuditRecalledMessage(m))
-          .map((m) => normalizeMessage(m, isGlobal));
+          .map((m) => {
+            const mm = normalizeMessage(m, isGlobal);
+            try {
+              if (mm && selfUserId.value) {
+                const from = mm.from_user || mm.fromUser || mm.from || mm.author;
+                if (from !== undefined && from !== null && String(from) === String(selfUserId.value)) mm.__own = true;
+              }
+            } catch (e1) {}
+            return mm;
+          });
 
         // Rebuild msgById for reply/scroll lookup.
         messages.value = [];
@@ -1658,6 +1733,11 @@ const app = createApp({
           if (face) userFaceCache[id] = face;
         });
       } catch (e) {}
+
+      // If we already have a chat open (possibly hydrated from cache), persist the improved avatar/name cache.
+      try {
+        if (currentChatId.value) scheduleChatCacheSave(currentChatId.value);
+      } catch (e) {}
     }
 
     async function fetchMissingUserNames(ids) {
@@ -1976,6 +2056,20 @@ const app = createApp({
             .join('')
         );
         return JSON.parse(json);
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function tryExtractSelfUserIdFromToken() {
+      try {
+        const t = token.value || (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : '') || '';
+        if (!t) return null;
+        const payload = decodeJwtPayload(t);
+        if (!payload || typeof payload !== 'object') return null;
+        const candidate = payload.userId || payload.uid || payload.id || payload.sub;
+        if (candidate === undefined || candidate === null || String(candidate) === '') return null;
+        return String(candidate);
       } catch (e) {
         return null;
       }
@@ -4794,6 +4888,12 @@ const app = createApp({
       const params = new URLSearchParams(window.location.search);
       const chatId = params.get('chat');
       if (chatId) {
+        try {
+          if (!selfUserId.value) {
+            const sid = tryExtractSelfUserIdFromToken();
+            if (sid) selfUserId.value = String(sid);
+          }
+        } catch (e0) {}
         try { await hydrateChatFromCache(chatId); } catch (e) {}
       }
 
