@@ -423,9 +423,6 @@ const app = createApp({
 
         cacheHydratedChatId.value = cid;
         chatLoading.value = false;
-
-        await nextTick();
-        scrollMessagesToBottom();
         return true;
       } catch (e) {
         return false;
@@ -4884,6 +4881,16 @@ const app = createApp({
     }
 
     onMounted(async () => {
+      // Keep consistent with the original rendering: set input-area height var once early.
+      // This avoids cached render showing a bottom gap and then shifting when the var updates later.
+      await nextTick();
+      updateInputAreaHeightVar();
+      window.addEventListener('resize', updateInputAreaHeightVar);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', updateInputAreaHeightVar);
+        window.visualViewport.addEventListener('scroll', updateInputAreaHeightVar);
+      }
+
       // 1) Read chatId immediately and hydrate from cache for instant render.
       const params = new URLSearchParams(window.location.search);
       const chatId = params.get('chat');
@@ -4895,6 +4902,11 @@ const app = createApp({
           }
         } catch (e0) {}
         try { await hydrateChatFromCache(chatId); } catch (e) {}
+        // After cache hydration, scroll to bottom once (same as original after message render).
+        try {
+          await nextTick();
+          scrollMessagesToBottom();
+        } catch (e2) {}
       }
 
       // 2) Then load runtime config + user index and reconcile with server.
@@ -4902,14 +4914,6 @@ const app = createApp({
       await loadUsersIndex();
       await resolveSelfProfile();
       await loadEmojiPacks();
-
-      await nextTick();
-      updateInputAreaHeightVar();
-      window.addEventListener('resize', updateInputAreaHeightVar);
-      if (window.visualViewport) {
-        window.visualViewport.addEventListener('resize', updateInputAreaHeightVar);
-        window.visualViewport.addEventListener('scroll', updateInputAreaHeightVar);
-      }
 
       if (chatId) {
         await openChat(chatId);
