@@ -173,6 +173,190 @@ const app = createApp({
     const messagesEl = ref(null);
     const chatLoading = ref(false);
 
+    // --- Chat content cache (App: sqlite via plus.sqlite; fallback: localStorage) ---
+    // Goal: instant render from cache, then reconcile with server (authoritative) results.
+    const CHAT_CACHE_VERSION = 1;
+    const CHAT_CACHE_MAX_MESSAGES = 200;
+    const CHAT_CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
+
+    const cacheHydratedChatId = ref(null);
+    let cacheSaveTimer = null;
+    let cacheSavePending = false;
+
+    function cacheTokenScope() {
+      try {
+        const t = token.value || localStorage.getItem('token') || '';
+        const s = String(t || '');
+        return s ? s.slice(0, 16) : 'anon';
+      } catch (e) {
+        return 'anon';
+      }
+    }
+
+    function chatCacheKey(chatId) {
+      try {
+        const cid = chatId !== undefined && chatId !== null ? String(chatId) : '';
+        if (!cid) return '';
+        return `mc:chat_detail_cache:v${CHAT_CACHE_VERSION}:${cacheTokenScope()}:${cid}`;
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function getMcCache() {
+      try {
+        return window.McCache && typeof window.McCache.getJson === 'function' ? window.McCache : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function stripForCacheMessage(m) {
+      try {
+        if (!m || typeof m !== 'object') return null;
+        const id = m.id !== undefined && m.id !== null ? String(m.id) : '';
+        if (!id) return null;
+
+        // Keep only JSON-safe fields used by UI & reconciliation.
+        const out = {
+          id,
+          type: m.type || 'text',
+          content: m.content,
+          from_user: m.from_user ?? m.fromUser ?? m.from,
+          created_at: m.created_at ?? m.createdAt,
+          replied_to: m.replied_to ?? m.repliedTo,
+          read: m.read,
+          readCount: m.readCount,
+          meta: m.meta,
+          __status: m.__status,
+        };
+        return out;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function trimMessagesForCache(list) {
+      try {
+        const arr = Array.isArray(list) ? list : [];
+        if (arr.length <= CHAT_CACHE_MAX_MESSAGES) return arr;
+        return arr.slice(-CHAT_CACHE_MAX_MESSAGES);
+      } catch (e) {
+        return [];
+      }
+    }
+
+    async function saveChatCacheNow(chatId) {
+      try {
+        const cid = chatId !== undefined && chatId !== null ? String(chatId) : '';
+        if (!cid) return;
+
+        const key = chatCacheKey(cid);
+        if (!key) return;
+
+        const rawMsgs = Array.isArray(messages.value) ? messages.value : [];
+        const trimmed = trimMessagesForCache(rawMsgs);
+        const cachedMsgs = trimmed
+          .map(stripForCacheMessage)
+          .filter(Boolean);
+
+        const payload = {
+          v: CHAT_CACHE_VERSION,
+          t: Date.now(),
+          chatId: cid,
+          title: currentChatTitle.value || '',
+          faceUrl: currentChatFaceUrl.value || '',
+          meta: currentChatMeta.value && typeof currentChatMeta.value === 'object' ? currentChatMeta.value : null,
+          messages: cachedMsgs,
+        };
+
+        const mc = getMcCache();
+        if (mc && typeof mc.setJson === 'function') {
+          try { await mc.setJson(key, payload, payload.t); } catch (e0) {}
+          try { await mc.prunePrefix(`mc:chat_detail_cache:v${CHAT_CACHE_VERSION}:`, 60); } catch (e1) {}
+        } else {
+          // Fallback (web): localStorage
+          try { localStorage.setItem(key, JSON.stringify(payload)); } catch (e2) {}
+        }
+      } catch (e) {}
+    }
+
+    function scheduleChatCacheSave(chatId) {
+      try {
+        const cid = chatId !== undefined && chatId !== null ? String(chatId) : '';
+        if (!cid) return;
+        cacheSavePending = true;
+        if (cacheSaveTimer) return;
+        cacheSaveTimer = setTimeout(() => {
+          cacheSaveTimer = null;
+          if (!cacheSavePending) return;
+          cacheSavePending = false;
+          try { saveChatCacheNow(cid); } catch (e0) {}
+        }, 650);
+      } catch (e) {}
+    }
+
+    async function loadChatCache(chatId) {
+      try {
+        const cid = chatId !== undefined && chatId !== null ? String(chatId) : '';
+        if (!cid) return null;
+        const key = chatCacheKey(cid);
+        if (!key) return null;
+        const mc = getMcCache();
+        let data = null;
+        if (mc && typeof mc.getJson === 'function') {
+          data = await mc.getJson(key);
+        } else {
+          try { data = JSON.parse(localStorage.getItem(key) || ''); } catch (e0) { data = null; }
+        }
+        if (!data || typeof data !== 'object') return null;
+        if (Number(data.v) !== CHAT_CACHE_VERSION) return null;
+        const ts = Number(data.t) || 0;
+        if (!ts || Date.now() - ts > CHAT_CACHE_TTL_MS) return null;
+        if (String(data.chatId || '') !== cid) return null;
+        if (!Array.isArray(data.messages)) return null;
+        return data;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    async function hydrateChatFromCache(chatId) {
+      try {
+        const cached = await loadChatCache(chatId);
+        if (!cached) return false;
+
+        const cid = String(chatId);
+        currentChatId.value = cid;
+        currentChatTitle.value = String(cached.title || currentChatTitle.value || '');
+        currentChatFaceUrl.value = String(cached.faceUrl || currentChatFaceUrl.value || '');
+        currentChatMeta.value = cached.meta && typeof cached.meta === 'object' ? cached.meta : currentChatMeta.value;
+
+        const isGlobal = cid === 'global';
+        const list = (Array.isArray(cached.messages) ? cached.messages : [])
+          .filter((m) => m && m.id && !isAuditRecalledMessage(m))
+          .map((m) => normalizeMessage(m, isGlobal));
+
+        // Rebuild msgById for reply/scroll lookup.
+        messages.value = [];
+        for (const k of Object.keys(msgById)) delete msgById[k];
+        for (const m of list) {
+          if (!m || !m.id) continue;
+          msgById[String(m.id)] = m;
+        }
+        messages.value = list;
+
+        cacheHydratedChatId.value = cid;
+        chatLoading.value = false;
+
+        await nextTick();
+        scrollMessagesToBottom();
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
     // Group management
     const groupManageVisible = ref(false);
     const groupManageLoading = ref(false);
@@ -3342,6 +3526,8 @@ const app = createApp({
             messages.value.push(msg);
           }
 
+          try { scheduleChatCacheSave(currentChatId.value); } catch (e0) {}
+
           await nextTick();
           if (messagesEl.value) {
             messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
@@ -3374,6 +3560,8 @@ const app = createApp({
             msgById[msg.id] = msg;
             messages.value.push(msg);
           }
+
+          try { scheduleChatCacheSave('global'); } catch (e0) {}
 
           await nextTick();
         } catch (e) {}
@@ -3616,10 +3804,128 @@ const app = createApp({
       } catch (e) {}
     }
 
+    function messageSortKey(m) {
+      try {
+        if (!m || typeof m !== 'object') return 0;
+        const raw = m.created_at ?? m.createdAt;
+        const ms = raw ? Date.parse(String(raw)) : NaN;
+        if (!Number.isNaN(ms) && ms > 0) return ms;
+        // fallback: temp_ or numeric id may contain time-ish
+        const id = m.id !== undefined && m.id !== null ? String(m.id) : '';
+        const m2 = id.match(/(\d{10,13})/);
+        if (m2 && m2[1]) {
+          const n = Number(m2[1]);
+          if (!Number.isNaN(n) && n > 0) return n;
+        }
+        return 0;
+      } catch (e) {
+        return 0;
+      }
+    }
+
+    function mergeMessagesServerFirst(serverMsgs, cachedMsgs) {
+      try {
+        const merged = [];
+        const byId = Object.create(null);
+
+        function textContentOf(m) {
+          try {
+            if (!m) return '';
+            const c = m.content;
+            if (c === null || c === undefined) return '';
+            if (typeof c === 'string') return c;
+            if (typeof c === 'object') {
+              if (c.text !== undefined && c.text !== null) return String(c.text);
+              if (c.content !== undefined && c.content !== null) return String(c.content);
+            }
+            return '';
+          } catch (e) {
+            return '';
+          }
+        }
+
+        function fingerprintOf(m) {
+          try {
+            const from = m && (m.from_user ?? m.fromUser ?? m.from);
+            const type = String((m && m.type) || 'text').toLowerCase();
+            if (type !== 'text') return '';
+            const text = textContentOf(m).trim();
+            if (!from || !text) return '';
+            return `${String(from)}|text|${text.slice(0, 200)}`;
+          } catch (e) {
+            return '';
+          }
+        }
+
+        function isOptimisticTemp(m) {
+          try {
+            if (!m || !m.id) return false;
+            const id = String(m.id);
+            if (/^temp_/.test(id)) return true;
+            const st = String(m.__status || '').toLowerCase();
+            return st === 'sending' || st === 'failed';
+          } catch (e) {
+            return false;
+          }
+        }
+
+        const serverFpTimes = Object.create(null);
+
+        const sArr = Array.isArray(serverMsgs) ? serverMsgs : [];
+        const cArr = Array.isArray(cachedMsgs) ? cachedMsgs : [];
+
+        for (const m of sArr) {
+          if (!m || !m.id || isAuditRecalledMessage(m)) continue;
+          const id = String(m.id);
+          byId[id] = m;
+          merged.push(m);
+
+          const fp = fingerprintOf(m);
+          if (fp) {
+            const t = messageSortKey(m);
+            if (!serverFpTimes[fp]) serverFpTimes[fp] = [];
+            serverFpTimes[fp].push(t);
+          }
+        }
+
+        //补上缓存里有、服务端暂未返回的消息（例如未 ACK 的 temp 消息/网络抖动）。
+        for (const m of cArr) {
+          if (!m || !m.id || isAuditRecalledMessage(m)) continue;
+          const id = String(m.id);
+          if (byId[id]) continue;
+
+          // Drop cached optimistic temp if server already has the same message.
+          if (isOptimisticTemp(m)) {
+            const fp = fingerprintOf(m);
+            if (fp && Array.isArray(serverFpTimes[fp]) && serverFpTimes[fp].length > 0) {
+              const t = messageSortKey(m);
+              const hit = serverFpTimes[fp].some((x) => Math.abs((Number(x) || 0) - (Number(t) || 0)) <= 1000 * 60 * 3);
+              if (hit) continue;
+            }
+          }
+
+          byId[id] = m;
+          merged.push(m);
+        }
+
+        merged.sort((a, b) => messageSortKey(a) - messageSortKey(b));
+        return trimMessagesForCache(merged);
+      } catch (e) {
+        return trimMessagesForCache(serverMsgs);
+      }
+    }
+
     async function openChat(id) {
-      chatLoading.value = true;
+      const alreadyHydrated =
+        cacheHydratedChatId.value &&
+        String(cacheHydratedChatId.value) === String(id) &&
+        Array.isArray(messages.value) &&
+        messages.value.length > 0;
+
+      // If we already rendered from cache, avoid blocking UI with a big spinner.
+      chatLoading.value = !alreadyHydrated;
       currentChatId.value = id;
-      currentChatMeta.value = null;
+      if (!alreadyHydrated) currentChatMeta.value = null;
       const isGlobal = id === 'global';
 
       loadingMore.value = false;
@@ -3688,15 +3994,24 @@ const app = createApp({
         // Silent audit recall: never render these messages.
         if (Array.isArray(msgs)) msgs = msgs.filter((m) => !isAuditRecalledMessage(m));
 
-        messages.value = [];
-        for (const k of Object.keys(msgById)) delete msgById[k];
+        // Reconcile: server is authoritative, cache is a fast preview.
+        const cachedSnapshot = alreadyHydrated ? (Array.isArray(messages.value) ? messages.value.slice() : []) : [];
 
         msgs.forEach(m => {
           normalizeMessage(m, isGlobal);
-          if (m && m.id && !isAuditRecalledMessage(m)) msgById[m.id] = m;
         });
-        messages.value = msgs;
+
+        const merged = mergeMessagesServerFirst(msgs, cachedSnapshot);
+        messages.value = [];
+        for (const k of Object.keys(msgById)) delete msgById[k];
+        for (const m of merged) {
+          if (m && m.id && !isAuditRecalledMessage(m)) msgById[String(m.id)] = m;
+        }
+        messages.value = merged;
+
         noMoreBefore.value = !Array.isArray(msgs) || msgs.length < INITIAL_LIMIT;
+
+        try { scheduleChatCacheSave(id); } catch (e0) {}
 
         await nextTick();
         scrollMessagesToBottom();
@@ -3715,6 +4030,9 @@ const app = createApp({
         chatLoading.value = false;
         await nextTick();
         scrollMessagesToBottom();
+
+        // After a successful open, this chat is now hydrated (regardless of source).
+        try { cacheHydratedChatId.value = String(id); } catch (e) {}
       }
     }
 
@@ -3751,6 +4069,8 @@ const app = createApp({
         });
 
         messages.value = more.concat(messages.value).filter((m) => !isAuditRecalledMessage(m)).map((m) => normalizeMessage(m, isGlobal));
+
+        try { scheduleChatCacheSave(currentChatId.value); } catch (e0) {}
 
         await nextTick();
         const newScrollHeight = messagesEl.value.scrollHeight;
@@ -3819,6 +4139,8 @@ const app = createApp({
 
       msgById[tempId] = optimisticMsg;
       messages.value.push(optimisticMsg);
+
+      try { scheduleChatCacheSave(currentChatId.value); } catch (e0) {}
       msgInput.value = '';
       clearRichInputDom();
       pendingMentions.value = [];
@@ -4468,6 +4790,14 @@ const app = createApp({
     }
 
     onMounted(async () => {
+      // 1) Read chatId immediately and hydrate from cache for instant render.
+      const params = new URLSearchParams(window.location.search);
+      const chatId = params.get('chat');
+      if (chatId) {
+        try { await hydrateChatFromCache(chatId); } catch (e) {}
+      }
+
+      // 2) Then load runtime config + user index and reconcile with server.
       await fetchConfig();
       await loadUsersIndex();
       await resolveSelfProfile();
@@ -4481,8 +4811,6 @@ const app = createApp({
         window.visualViewport.addEventListener('scroll', updateInputAreaHeightVar);
       }
 
-      const params = new URLSearchParams(window.location.search);
-      const chatId = params.get('chat');
       if (chatId) {
         await openChat(chatId);
       }

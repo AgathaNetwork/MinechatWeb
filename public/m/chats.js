@@ -14,6 +14,92 @@ const app = createApp({
     const userFaceCache = reactive({});
     const userFetchInFlight = reactive({});
 
+    // --- Chats list cache (App: sqlite via plus.sqlite; fallback: localStorage) ---
+    const CHAT_LIST_CACHE_VERSION = 1;
+    const CHAT_LIST_CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 3; // 3 days
+    const CHAT_LIST_CACHE_PREFIX = `mc:chat_list_cache:v${CHAT_LIST_CACHE_VERSION}:`;
+
+    function cacheTokenScope() {
+      try {
+        const t = token.value || localStorage.getItem('token') || '';
+        const s = String(t || '');
+        return s ? s.slice(0, 16) : 'anon';
+      } catch (e) {
+        return 'anon';
+      }
+    }
+
+    function getMcCache() {
+      try {
+        return window.McCache && typeof window.McCache.getJson === 'function' ? window.McCache : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function chatListCacheKey() {
+      try {
+        return `${CHAT_LIST_CACHE_PREFIX}${cacheTokenScope()}`;
+      } catch (e) {
+        return `${CHAT_LIST_CACHE_PREFIX}anon`;
+      }
+    }
+
+    async function loadChatsCache() {
+      try {
+        const key = chatListCacheKey();
+        const mc = getMcCache();
+        let data = null;
+        if (mc) data = await mc.getJson(key);
+        else {
+          try { data = JSON.parse(localStorage.getItem(key) || ''); } catch (e0) { data = null; }
+        }
+
+        if (!data || typeof data !== 'object') return null;
+        if (Number(data.v) !== CHAT_LIST_CACHE_VERSION) return null;
+        const ts = Number(data.t) || 0;
+        if (!ts || Date.now() - ts > CHAT_LIST_CACHE_TTL_MS) return null;
+        if (!Array.isArray(data.chats)) return null;
+        return data;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    async function saveChatsCacheNow(list) {
+      try {
+        const key = chatListCacheKey();
+        const payload = {
+          v: CHAT_LIST_CACHE_VERSION,
+          t: Date.now(),
+          apiBase: String(apiBase.value || ''),
+          chats: Array.isArray(list) ? list : [],
+        };
+
+        const mc = getMcCache();
+        if (mc && typeof mc.setJson === 'function') {
+          await mc.setJson(key, payload, payload.t);
+          try { await mc.prunePrefix(CHAT_LIST_CACHE_PREFIX, 10); } catch (e0) {}
+        } else {
+          try { localStorage.setItem(key, JSON.stringify(payload)); } catch (e1) {}
+        }
+      } catch (e) {}
+    }
+
+    async function hydrateChatsFromCache() {
+      try {
+        const cached = await loadChatsCache();
+        if (!cached) return false;
+        if (cached.apiBase && !apiBase.value) {
+          apiBase.value = String(cached.apiBase);
+        }
+        chats.value = sortChatsList(cached.chats);
+        return Array.isArray(chats.value) && chats.value.length > 0;
+      } catch (e) {
+        return false;
+      }
+    }
+
     // --- Presence (online users via socket broadcasts) ---
     // userId -> true
     const onlineUserMap = reactive({});
@@ -197,6 +283,8 @@ const app = createApp({
         if (!res.ok) return;
         const raw = await res.json();
         chats.value = sortChatsList(raw);
+
+        try { saveChatsCacheNow(chats.value); } catch (e0) {}
 
         // Initialize unread flags from server snapshot (covers offline期间收到消息的提示).
         try {
@@ -961,7 +1049,10 @@ const app = createApp({
     }
 
     onMounted(async () => {
-      chatsLoading.value = true;
+      // 1) Instant render from cache
+      let hydrated = false;
+      try { hydrated = await hydrateChatsFromCache(); } catch (e) { hydrated = false; }
+      chatsLoading.value = !hydrated;
       try {
         await fetchConfig();
         await resolveSelfProfile();
