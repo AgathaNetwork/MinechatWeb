@@ -2791,6 +2791,12 @@ const app = createApp({
         if (isRecalledMessage(m)) return { tag: '已撤回', suffix: '', text: '' };
 
         const t = String(m.type || '').toLowerCase();
+        if (t === 'gallery_image' || t === 'galleryimage' || t === 'gallery') {
+          const id = galleryImageIdFromMessage(m);
+          const info = id ? galleryMsgCache[String(id)] : null;
+          const suffix = info && info.name ? String(info.name) : (id ? `#${id}` : '');
+          return { tag: '相册', suffix, text: '' };
+        }
         if (t === 'emoji' || t === 'sticker') {
           const fn = m.content && m.content.filename ? displayFilename(m.content.filename) : '';
           return { tag: '表情', suffix: fn, text: '' };
@@ -3683,6 +3689,11 @@ const app = createApp({
       try {
         if (!content || typeof content !== 'object') return '';
 
+        // Gallery image payload: { id: 123 }
+        if (content.id !== undefined && content.id !== null && Number.isFinite(Number(content.id))) {
+          return '[相册]';
+        }
+
         // Most common: { text: "..." }
         if (content.text !== undefined && content.text !== null) {
           const t = String(content.text);
@@ -3715,10 +3726,95 @@ const app = createApp({
       }
     }
 
+    function isGalleryImageMessage(m) {
+      try {
+        if (!m || typeof m !== 'object') return false;
+        const t = String(m.type || '').toLowerCase();
+        return t === 'gallery_image' || t === 'galleryimage' || t === 'gallery';
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function galleryImageIdFromMessage(m) {
+      try {
+        if (!m || typeof m !== 'object') return null;
+        const c = m.content;
+        if (c && typeof c === 'object') {
+          const v = c.id !== undefined && c.id !== null ? Number(c.id) : NaN;
+          return Number.isFinite(v) && v > 0 ? Math.floor(v) : null;
+        }
+        const s = String(c || '').trim();
+        if (!s) return null;
+        if (/^\d+$/.test(s)) {
+          const n = Number(s);
+          return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+        }
+        // tolerate JSON string
+        if (s.startsWith('{') && s.endsWith('}')) {
+          const j = JSON.parse(s);
+          const v = j && j.id !== undefined && j.id !== null ? Number(j.id) : NaN;
+          return Number.isFinite(v) && v > 0 ? Math.floor(v) : null;
+        }
+      } catch (e) {}
+      return null;
+    }
+
+    const galleryMsgCache = reactive({}); // id -> { id, name, url }
+    const galleryMsgLoading = reactive({}); // id -> true
+
+    async function ensureGalleryInfo(id) {
+      const gid = Number(id);
+      if (!Number.isFinite(gid) || gid <= 0) return;
+      const key = String(Math.floor(gid));
+      if (galleryMsgCache[key]) return;
+      if (galleryMsgLoading[key]) return;
+      galleryMsgLoading[key] = true;
+      try {
+        const res = await safeFetch(`${apiBase.value}/aggallery/getDetail?id=${encodeURIComponent(key)}`);
+        if (!res.ok) return;
+        const d = await res.json().catch(() => null);
+        if (!d || typeof d !== 'object') return;
+        const name = d.name ? String(d.name) : '';
+        const url = d.url ? String(d.url) : '';
+        galleryMsgCache[key] = { id: Number(d.id) || Number(key), name, url };
+      } catch (e) {
+        // ignore
+      } finally {
+        try { delete galleryMsgLoading[key]; } catch (e2) {}
+      }
+    }
+
+    function galleryInfoFor(m) {
+      const id = galleryImageIdFromMessage(m);
+      if (!id) return { id: null, name: '', url: '', loading: false };
+      const key = String(id);
+      if (!galleryMsgCache[key]) ensureGalleryInfo(id);
+      const cached = galleryMsgCache[key];
+      return {
+        id,
+        name: cached && cached.name ? String(cached.name) : '',
+        url: cached && cached.url ? String(cached.url) : '',
+        loading: !!galleryMsgLoading[key],
+      };
+    }
+
+    function openGalleryFromMessage(m) {
+      try {
+        const id = galleryImageIdFromMessage(m);
+        if (!id) return;
+        window.location.href = `/gallery.html?detail=${encodeURIComponent(String(id))}`;
+      } catch (e) {}
+    }
+
     function messageTextPreview(m) {
       if (!m) return '';
       if (isAuditRecalledMessage(m)) return '';
       if (isRecalledMessage(m)) return '[消息已撤回]';
+      if (isGalleryImageMessage(m)) {
+        const id = galleryImageIdFromMessage(m);
+        return id ? `[相册] #${id}` : '[相册]';
+      }
       if (String(m.type || '').toLowerCase() === 'coordinate') {
         try {
           const c = m.content && typeof m.content === 'object' ? m.content : null;
@@ -5621,6 +5717,9 @@ const app = createApp({
       messageAuthorFaceUrl,
       messageTextPreview,
       messageTextParts,
+      isGalleryImageMessage,
+      galleryInfoFor,
+      openGalleryFromMessage,
       isRecalledMessage,
       recallNoticeText,
       formatLastMessage,

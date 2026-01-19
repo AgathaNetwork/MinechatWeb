@@ -1047,6 +1047,11 @@ const app = createApp({
         if (isRecalledMessage(m)) return { tag: '已撤回', suffix: '' };
 
         const t = String(m.type || '').toLowerCase();
+        if (t === 'gallery_image' || t === 'galleryimage' || t === 'gallery') {
+          const id = m.content && typeof m.content === 'object' ? (m.content.id ?? null) : null;
+          const n = Number(id);
+          return { tag: '相册', suffix: Number.isFinite(n) && n > 0 ? `#${Math.floor(n)}` : '' };
+        }
         if (t === 'emoji' || t === 'sticker') {
           const fn = m.content && m.content.filename ? String(m.content.filename) : '';
           return { tag: '表情', suffix: fn };

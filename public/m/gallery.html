@@ -93,7 +93,13 @@
           </template>
         </el-skeleton>
 
-        <el-dialog v-model="detailVisible" title="图片详情" width="92%" top="10vh">
+        <el-dialog v-model="detailVisible" width="92%" top="10vh">
+          <template #header>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+              <div style="font-weight:600">图片详情</div>
+              <el-button plain size="small" :disabled="!detail || detailLoading" @click.stop="openShare(detail && detail.id)">分享</el-button>
+            </div>
+          </template>
           <el-skeleton :loading="detailLoading" animated>
             <template #template>
               <el-skeleton-item variant="rect" style="width:100%;height:240px;border-radius:8px"></el-skeleton-item>
@@ -166,6 +172,18 @@
               </div>
             </template>
           </el-skeleton>
+        </el-dialog>
+
+        <el-dialog v-model="shareVisible" title="分享" width="92%" top="18vh" :close-on-click-modal="false">
+          <div style="font-size:12px;color:var(--mc-text-secondary);margin-bottom:8px">选择要发送到的会话（不支持全服）</div>
+          <el-select v-model="shareTargetChatId" placeholder="选择会话" style="width:100%" filterable :loading="shareChatsLoading">
+            <el-option v-for="c in shareTargets" :key="c.id" :label="c.name" :value="c.id"></el-option>
+          </el-select>
+          <div style="margin-top:10px;font-size:12px;color:var(--mc-text-secondary)">内容：相册图片 #{{ shareSourceId }}</div>
+          <template #footer>
+            <el-button @click="shareVisible=false" :disabled="shareSending">取消</el-button>
+            <el-button type="primary" @click="confirmShare" :loading="shareSending">发送</el-button>
+          </template>
         </el-dialog>
       </div>
 

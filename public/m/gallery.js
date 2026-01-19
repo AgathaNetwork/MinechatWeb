@@ -79,6 +79,104 @@ const app = createApp({
     const detailError = ref('');
     const detail = ref(null);
 
+    // Share (send gallery image id as a structured message)
+    const shareVisible = ref(false);
+    const shareSending = ref(false);
+    const shareChatsLoading = ref(false);
+    const shareTargetChatId = ref('');
+    const shareSourceId = ref('');
+    const shareChats = ref([]);
+
+    const shareTargets = computed(() => {
+      try {
+        const list = Array.isArray(shareChats.value) ? shareChats.value : [];
+        return list
+          .filter((c) => c && c.id !== undefined && c.id !== null && String(c.id) !== 'global')
+          .map((c) => {
+            const id = String(c.id);
+            const name = c.displayName || c.name || id;
+            return { id, name: String(name) };
+          });
+      } catch (e) {
+        return [];
+      }
+    });
+
+    async function loadShareChats() {
+      if (shareChatsLoading.value) return;
+      shareChatsLoading.value = true;
+      try {
+        await fetchConfig();
+        const res = await safeFetch(`${apiBase.value}/chats`);
+        if (!res.ok) {
+          if (res.status === 401) throw new Error('请先登录');
+          const txt = await res.text().catch(() => '');
+          throw new Error(txt || `加载会话失败：${res.status}`);
+        }
+        const list = await res.json().catch(() => []);
+        shareChats.value = Array.isArray(list) ? list : [];
+      } finally {
+        shareChatsLoading.value = false;
+      }
+    }
+
+    async function openShare(id) {
+      const n = Number(id);
+      if (!Number.isFinite(n) || n <= 0) {
+        try { ElementPlus.ElMessage.warning('无效的图片 ID'); } catch (e) {}
+        return;
+      }
+      shareSourceId.value = String(Math.floor(n));
+      shareTargetChatId.value = '';
+      shareVisible.value = true;
+      try {
+        await loadShareChats();
+      } catch (e) {
+        try { ElementPlus.ElMessage.error(e && e.message ? e.message : '无法加载会话'); } catch (e2) {}
+      }
+    }
+
+    async function confirmShare() {
+      if (shareSending.value) return;
+      const chatId = String(shareTargetChatId.value || '').trim();
+      const gid = Number(shareSourceId.value);
+      if (!chatId) {
+        try { ElementPlus.ElMessage.warning('请选择会话'); } catch (e) {}
+        return;
+      }
+      if (!Number.isFinite(gid) || gid <= 0) {
+        try { ElementPlus.ElMessage.warning('无效的图片 ID'); } catch (e) {}
+        return;
+      }
+      if (chatId === 'global') {
+        try { ElementPlus.ElMessage.warning('不支持发送到全服聊天'); } catch (e) {}
+        return;
+      }
+
+      shareSending.value = true;
+      try {
+        await fetchConfig();
+        const url = `${apiBase.value}/chats/${encodeURIComponent(chatId)}/messages`;
+        const payload = { type: 'gallery_image', content: { id: Math.floor(gid) } };
+        const res = await safeFetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          if (res.status === 401) throw new Error('请先登录');
+          const txt = await res.text().catch(() => '');
+          throw new Error(txt || `发送失败：${res.status}`);
+        }
+        try { ElementPlus.ElMessage.success('已发送'); } catch (e) {}
+        shareVisible.value = false;
+      } catch (e) {
+        try { ElementPlus.ElMessage.error(e && e.message ? e.message : '发送失败'); } catch (e2) {}
+      } finally {
+        shareSending.value = false;
+      }
+    }
+
     const worldOptions = computed(() => {
       const list = Array.isArray(worldDict.value) ? worldDict.value : [];
       return list
@@ -524,6 +622,18 @@ const app = createApp({
       await fetchConfig();
       await loadDicts();
       await loadPage(1, false);
+
+      // Open detail from query: /m/gallery.html?detail=123
+      try {
+        const params = new URLSearchParams(window.location.search || '');
+        const id = params.get('detail');
+        if (id) {
+          const n = Number(id);
+          if (Number.isFinite(n) && n > 0) {
+            await openDetail({ id: Math.floor(n) });
+          }
+        }
+      } catch (e) {}
     });
 
     return {
@@ -547,6 +657,16 @@ const app = createApp({
       detailLoading,
       detailError,
       detail,
+
+      // share
+      shareVisible,
+      shareSending,
+      shareChatsLoading,
+      shareTargets,
+      shareTargetChatId,
+      shareSourceId,
+      openShare,
+      confirmShare,
       setYear,
       setWorld,
       setType,
