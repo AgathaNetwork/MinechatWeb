@@ -275,6 +275,33 @@ const app = createApp({
         .slice(0, 50);
     }
 
+    async function readErrorBody(res) {
+      try {
+        const ct = String(res.headers && res.headers.get ? (res.headers.get('content-type') || '') : '').toLowerCase();
+        if (ct.includes('application/json')) {
+          const j = await res.json().catch(() => null);
+          return { json: j, text: j ? JSON.stringify(j) : '' };
+        }
+      } catch (e) {}
+      const text = await res.text().catch(() => '');
+      return { json: null, text };
+    }
+
+    function mapAuditErrorToText(errJson, fallbackText) {
+      try {
+        const j = errJson && typeof errJson === 'object' ? errJson : null;
+        const code = j && (j.code || j.errorCode || j.status) ? String(j.code || j.errorCode || j.status) : '';
+        const errorText = j && j.error ? String(j.error) : '';
+        const audit = j && j.audit && typeof j.audit === 'object' ? j.audit : null;
+        const suggestion = audit && audit.suggestion ? String(audit.suggestion) : '';
+
+        // Minechat backend returns: { error: 'Content blocked', audit: { enabled:true, passed:false, suggestion:'block', labels:[...] } }
+        if (errorText === 'Content blocked' || suggestion === 'block') return '未通过审核';
+        if (code === 'CONTENT_BLOCKED') return '未通过审核';
+      } catch (e) {}
+      return fallbackText;
+    }
+
     async function submitUpload() {
       if (uploading.value) return;
       uploadError.value = '';
@@ -370,8 +397,10 @@ const app = createApp({
         });
 
         if (!createRes.ok) {
-          const txt = await createRes.text().catch(() => '');
-          throw new Error(`创建失败：${createRes.status} ${txt}`);
+          const body = await readErrorBody(createRes);
+          const mapped = mapAuditErrorToText(body.json, body.text || '');
+          if (createRes.status === 401) throw new Error('请先登录');
+          throw new Error(mapped || `创建失败：${createRes.status} ${body.text || ''}`);
         }
 
         const createData = await createRes.json().catch(() => null);
@@ -391,18 +420,21 @@ const app = createApp({
           body: formData,
         });
 
-        let uploadData = null;
-        try {
-          uploadData = await uploadRes.json();
-        } catch (e) {
-          const txt = await uploadRes.text().catch(() => '');
-          throw new Error(`上传响应解析失败：${uploadRes.status} ${txt}`);
+        if (!uploadRes.ok) {
+          const body = await readErrorBody(uploadRes);
+          const mapped = mapAuditErrorToText(body.json, body.text || '');
+          if (mapped === '未通过审核') throw new Error('未通过审核');
+          if (uploadRes.status === 401) throw new Error('请先登录');
+          throw new Error(mapped || `上传失败：${uploadRes.status} ${body.text || ''}`);
         }
 
+        const uploadData = await uploadRes.json().catch(() => null);
         const msg = uploadData && uploadData.message ? String(uploadData.message) : '';
-        const ok = uploadRes.ok && (msg.includes('File uploaded successfully') || msg.includes('success') || uploadData.ok === true);
+        const ok = msg.includes('File uploaded successfully') || msg.includes('success') || uploadData?.ok === true;
         if (!ok) {
-          throw new Error(`上传失败：${msg || JSON.stringify(uploadData)}`);
+          // Some backends might still return 200 with error payload
+          const mapped = mapAuditErrorToText(uploadData, msg || (uploadData ? JSON.stringify(uploadData) : ''));
+          throw new Error(mapped || `上传失败：${msg || (uploadData ? JSON.stringify(uploadData) : '')}`);
         }
 
         uploadStepText.value = '';
