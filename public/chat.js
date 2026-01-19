@@ -3158,6 +3158,11 @@ const app = createApp({
 
     async function openGroupManage() {
       if (!isGroupChat.value || !currentChatId.value || currentChatId.value === 'global') return;
+      // Prevent stale privilege state from a previous chat.
+      // If loading admins fails, we must not accidentally treat someone as owner.
+      groupOwnerId.value = null;
+      groupAdmins.value = [];
+      adminSelected.value = [];
       groupManageVisible.value = true;
       groupManageLoading.value = true;
       inviteSelected.value = [];
@@ -3246,7 +3251,10 @@ const app = createApp({
     }
 
     async function saveGroupAdmins() {
-      if (!groupIsOwner.value) return;
+      if (!groupIsOwner.value) {
+        try { ElementPlus.ElMessage.warning('仅群主可设置管理员'); } catch (e) {}
+        return;
+      }
       if (!currentChatId.value) return;
       const ids = (adminSelected.value || []).map(String).filter(Boolean);
       groupActionLoading.value = true;
