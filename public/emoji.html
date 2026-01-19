@@ -60,7 +60,7 @@
           <div style="display:flex;flex-wrap:wrap;gap:12px">
             <div v-for="p in packs" :key="p.id" style="width:160px;text-align:center;border:1px solid #eee;padding:8px;border-radius:6px">
               <img :src="p.url" style="max-width:100%;height:80px;object-fit:contain" />
-              <div style="margin-top:8px">{{ p.name || p.id }}</div>
+              <div class="mc-ellipsis" :title="p.name || p.id" style="margin-top:8px">{{ p.name || p.id }}</div>
               <el-button type="danger" size="mini" @click="del(p.id)" style="margin-top:6px">删除</el-button>
             </div>
           </div>

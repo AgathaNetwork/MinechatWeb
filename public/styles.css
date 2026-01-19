@@ -57,3 +57,6 @@ html.dark [style*="#e6e6e6"],html.dark [style*="#eee"],html.dark [style*="#ddd"]
 	Element Plus appends messages to <body>, so sibling selector is reliable here. */
 .top-spacer ~ .el-message{top:calc(4vh + 16px) !important}
 .top-spacer ~ .el-notification{top:calc(4vh + 16px) !important}
+
+/* Text helpers */
+.mc-ellipsis{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
