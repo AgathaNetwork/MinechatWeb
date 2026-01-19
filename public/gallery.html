@@ -264,7 +264,20 @@
               </el-form-item>
 
               <el-form-item label="参与者">
-                <el-input v-model="uploadForm.players" placeholder="可选：用英文逗号分隔，如 a,b,c" :disabled="!(uploadFileList && uploadFileList.length)"></el-input>
+                <el-select
+                  v-model="uploadForm.playersSelected"
+                  multiple
+                  filterable
+                  collapse-tags
+                  collapse-tags-tooltip
+                  :max-collapse-tags="5"
+                  placeholder="可选：选择参与者（可搜索）"
+                  style="width:100%"
+                  :disabled="!(uploadFileList && uploadFileList.length)"
+                  :loading="uploadUsersLoading"
+                >
+                  <el-option v-for="u in uploadUserOptions" :key="u.value" :label="u.label" :value="u.value"></el-option>
+                </el-select>
               </el-form-item>
 
               <el-form-item label="包含坐标">

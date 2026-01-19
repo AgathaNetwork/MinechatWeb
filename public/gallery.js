@@ -96,7 +96,7 @@ const app = createApp({
       annotation: '',
       shaderName: '',
       shaderPreset: '',
-      players: '',
+      playersSelected: [],
       hasPosition: false,
       posWorld: 'world',
       posX: '',
@@ -105,6 +105,84 @@ const app = createApp({
       metaReady: false,
       meta: { name: '', size: 0, h: 0, w: 0 },
     });
+
+    const uploadUsers = ref([]);
+    const uploadUsersLoading = ref(false);
+    const uploadUsersLoaded = ref(false);
+
+    function extractUserName(u) {
+      try {
+        if (!u || typeof u !== 'object') return '';
+        const v = u.username || u.name || u.user || u.id;
+        return v !== undefined && v !== null ? String(v).trim() : '';
+      } catch (e) {
+        return '';
+      }
+    }
+
+    const uploadUserOptions = computed(() => {
+      const list = Array.isArray(uploadUsers.value) ? uploadUsers.value : [];
+      return list
+        .map((u) => {
+          const username = extractUserName(u);
+          if (!username) return null;
+          const id = u && (u.id !== undefined && u.id !== null) ? String(u.id) : '';
+          return {
+            value: username,
+            label: id && id !== username ? `${username} (${id})` : username,
+          };
+        })
+        .filter(Boolean);
+    });
+
+    const uploadUserNameSet = computed(() => {
+      try {
+        const set = new Set();
+        for (const o of uploadUserOptions.value || []) {
+          if (o && o.value) set.add(String(o.value));
+        }
+        return set;
+      } catch (e) {
+        return new Set();
+      }
+    });
+
+    async function loadUploadUsers(force) {
+      if (uploadUsersLoading.value) return;
+      if (!force && uploadUsersLoaded.value) return;
+
+      uploadUsersLoading.value = true;
+      try {
+        const res = await safeFetch(`${apiBase.value}/users`);
+        if (res.status === 204) {
+          uploadUsers.value = [];
+          uploadUsersLoaded.value = true;
+          return;
+        }
+        if (!res.ok) {
+          const body = await readErrorBody(res);
+          if (res.status === 401) throw new Error('请先登录');
+          throw new Error(body.text || `无法加载玩家列表：${res.status}`);
+        }
+
+        const raw = await res.json().catch(() => []);
+        const list = Array.isArray(raw) ? raw : [];
+        // keep original objects for label building; only filter invalid usernames
+        const uniq = new Map();
+        for (const u of list) {
+          const username = extractUserName(u);
+          if (!username) continue;
+          if (!uniq.has(username)) uniq.set(username, u);
+        }
+        uploadUsers.value = Array.from(uniq.values());
+        uploadUsersLoaded.value = true;
+      } catch (e) {
+        console.error(e);
+        // non-blocking
+      } finally {
+        uploadUsersLoading.value = false;
+      }
+    }
 
     const worldOptions = computed(() => {
       const list = Array.isArray(worldDict.value) ? worldDict.value : [];
@@ -161,7 +239,7 @@ const app = createApp({
         annotation: '',
         shaderName: '',
         shaderPreset: '',
-        players: '',
+        playersSelected: [],
         hasPosition: false,
         posWorld: 'world',
         posX: '',
@@ -177,6 +255,8 @@ const app = createApp({
       uploadVisible.value = true;
       uploadError.value = '';
       uploadStepText.value = '';
+      // Best-effort load users for participants select
+      loadUploadUsers(false).catch(() => {});
     }
 
     function onUploadClosed() {
@@ -369,7 +449,21 @@ const app = createApp({
         }
       }
 
-      const playersArr = parsePlayersCsv(uploadForm.value.players);
+      // Participants must be picked from /users (no custom values)
+      if (!uploadUsersLoaded.value) {
+        try { await loadUploadUsers(true); } catch (e) {}
+      }
+      const selected = uploadForm.value.playersSelected;
+      const selectedArr = Array.isArray(selected)
+        ? selected.map((x) => String(x || '').trim()).filter(Boolean).slice(0, 50)
+        : [];
+      const allowed = uploadUserNameSet.value;
+      const invalid = selectedArr.filter((x) => !allowed.has(String(x)));
+      if (invalid.length) {
+        try { ElementPlus.ElMessage.warning('参与者必须从玩家列表选择'); } catch (e) {}
+        return;
+      }
+      const playersArr = selectedArr;
 
       uploading.value = true;
       uploadStepText.value = '创建上传任务…';
@@ -915,6 +1009,8 @@ const app = createApp({
       uploadError,
       uploadStepText,
       uploadFileList,
+      uploadUsersLoading,
+      uploadUserOptions,
       uploadForm,
       openUpload,
       onUploadClosed,
