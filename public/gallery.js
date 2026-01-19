@@ -79,6 +79,34 @@ const app = createApp({
     const detailError = ref('');
     const detail = ref(null);
 
+    // Upload (manual)
+    const uploadVisible = ref(false);
+    const uploading = ref(false);
+    const uploadError = ref('');
+    const uploadStepText = ref('');
+    const uploadFileList = ref([]);
+    const selectedUploadFile = ref(null);
+
+    const uploadForm = ref({
+      username: localStorage.getItem('username') || '',
+      password: '',
+      world: null,
+      type: null,
+      year: String(new Date().getFullYear()),
+      name: '',
+      annotation: '',
+      shaderName: '',
+      shaderPreset: '',
+      players: '',
+      hasPosition: false,
+      posWorld: 'world',
+      posX: '',
+      posY: '',
+      posZ: '',
+      metaReady: false,
+      meta: { name: '', size: 0, h: 0, w: 0 },
+    });
+
     const worldOptions = computed(() => {
       const list = Array.isArray(worldDict.value) ? worldDict.value : [];
       return list
@@ -117,6 +145,314 @@ const app = createApp({
       apiBase.value = conf.apiProxyBase || conf.apiBase;
       // optional
       return conf;
+    }
+
+    function getEffectiveGalleryApiBase(conf) {
+      const fromConf = conf && (conf.galleryApiBase || conf.gallery_api_base);
+      if (fromConf) return String(fromConf).replace(/\/+$/, '');
+
+      const imgBase = conf && (conf.galleryImgBase || conf.gallery_img_base);
+      if (imgBase) {
+        const s = String(imgBase).trim();
+        if (/^https?:\/\//i.test(s)) {
+          try {
+            return new URL(s).origin;
+          } catch (e) {}
+        }
+      }
+
+      return 'https://api-gallery.agatha.org.cn';
+    }
+
+    function resetUploadState() {
+      uploadError.value = '';
+      uploadStepText.value = '';
+      uploading.value = false;
+      uploadFileList.value = [];
+      selectedUploadFile.value = null;
+      uploadForm.value = {
+        username: localStorage.getItem('username') || '',
+        password: '',
+        world: null,
+        type: null,
+        year: String(new Date().getFullYear()),
+        name: '',
+        annotation: '',
+        shaderName: '',
+        shaderPreset: '',
+        players: '',
+        hasPosition: false,
+        posWorld: 'world',
+        posX: '',
+        posY: '',
+        posZ: '',
+        metaReady: false,
+        meta: { name: '', size: 0, h: 0, w: 0 },
+      };
+    }
+
+    function openUpload() {
+      // Keep current filters/list; only open dialog.
+      uploadVisible.value = true;
+      uploadError.value = '';
+      uploadStepText.value = '';
+    }
+
+    function onUploadClosed() {
+      resetUploadState();
+    }
+
+    function sanitizePngFile(file) {
+      if (!file) return null;
+      const name = String(file.name || '');
+      const isPng = (file.type === 'image/png') || name.toLowerCase().endsWith('.png');
+      if (!isPng) return null;
+      return file;
+    }
+
+    function fileNameOnly(name) {
+      const s = String(name || '');
+      const idx1 = s.lastIndexOf('/');
+      const idx2 = s.lastIndexOf('\\');
+      const idx = Math.max(idx1, idx2);
+      return idx >= 0 ? s.slice(idx + 1) : s;
+    }
+
+    function readImageSize(file) {
+      return new Promise((resolve, reject) => {
+        try {
+          const url = URL.createObjectURL(file);
+          const img = new Image();
+          img.onload = () => {
+            try { URL.revokeObjectURL(url); } catch (e) {}
+            resolve({ w: img.width || 0, h: img.height || 0 });
+          };
+          img.onerror = () => {
+            try { URL.revokeObjectURL(url); } catch (e) {}
+            reject(new Error('无法读取图片尺寸'));
+          };
+          img.src = url;
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }
+
+    async function fillMetaFromFile(file) {
+      const f = sanitizePngFile(file);
+      if (!f) throw new Error('请只选择 PNG 图片');
+
+      const { w, h } = await readImageSize(f);
+      const sizeKB = Math.ceil((Number(f.size) || 0) / 1024);
+
+      uploadForm.value.meta = {
+        name: fileNameOnly(f.name),
+        size: Number.isFinite(sizeKB) ? sizeKB : 0,
+        w: Number(w) || 0,
+        h: Number(h) || 0,
+      };
+      uploadForm.value.metaReady = true;
+    }
+
+    async function onUploadFileChange(uploadFile, uploadFiles) {
+      uploadError.value = '';
+      uploadFileList.value = Array.isArray(uploadFiles) ? uploadFiles.slice(-1) : [];
+      const raw = uploadFile && uploadFile.raw ? uploadFile.raw : null;
+
+      const f = sanitizePngFile(raw);
+      if (!f) {
+        selectedUploadFile.value = null;
+        uploadForm.value.metaReady = false;
+        uploadForm.value.meta = { name: '', size: 0, h: 0, w: 0 };
+        uploadFileList.value = [];
+        try { ElementPlus.ElMessage.warning('仅支持 PNG 图片'); } catch (e) {}
+        return;
+      }
+
+      selectedUploadFile.value = f;
+      try {
+        await fillMetaFromFile(f);
+      } catch (e) {
+        uploadError.value = e && e.message ? e.message : String(e);
+      }
+    }
+
+    function onUploadFileRemove() {
+      selectedUploadFile.value = null;
+      uploadForm.value.metaReady = false;
+      uploadForm.value.meta = { name: '', size: 0, h: 0, w: 0 };
+      uploadFileList.value = [];
+    }
+
+    function parsePlayersCsv(text) {
+      const s = String(text || '').trim();
+      if (!s) return [];
+      return s
+        .split(',')
+        .map((x) => String(x || '').trim())
+        .filter(Boolean)
+        .slice(0, 50);
+    }
+
+    async function submitUpload() {
+      if (uploading.value) return;
+      uploadError.value = '';
+
+      const f = selectedUploadFile.value;
+      if (!f) {
+        try { ElementPlus.ElMessage.warning('请先选择 PNG 文件'); } catch (e) {}
+        return;
+      }
+
+      const username = String(uploadForm.value.username || '').trim();
+      const password = String(uploadForm.value.password || '');
+      if (!username) {
+        try { ElementPlus.ElMessage.warning('请输入用户名'); } catch (e) {}
+        return;
+      }
+      if (!password) {
+        try { ElementPlus.ElMessage.warning('请输入上传密码'); } catch (e) {}
+        return;
+      }
+
+      const worldId = uploadForm.value.world;
+      const typeId = uploadForm.value.type;
+      if (worldId === null || worldId === undefined || String(worldId).trim() === '') {
+        try { ElementPlus.ElMessage.warning('请选择世界'); } catch (e) {}
+        return;
+      }
+      if (typeId === null || typeId === undefined || String(typeId).trim() === '') {
+        try { ElementPlus.ElMessage.warning('请选择类型'); } catch (e) {}
+        return;
+      }
+
+      const yearText = String(uploadForm.value.year || '').trim();
+      const yearNum = Number(yearText);
+      if (!yearText || !Number.isFinite(yearNum) || yearNum < 2000 || yearNum > 3000) {
+        try { ElementPlus.ElMessage.warning('请输入有效年份'); } catch (e) {}
+        return;
+      }
+
+      const name = String(uploadForm.value.name || '').trim();
+      const annotation = String(uploadForm.value.annotation || '').trim();
+      if (!name) {
+        try { ElementPlus.ElMessage.warning('请输入图片名'); } catch (e) {}
+        return;
+      }
+      if (!annotation) {
+        try { ElementPlus.ElMessage.warning('请输入描述'); } catch (e) {}
+        return;
+      }
+
+      const shader = {
+        name: String(uploadForm.value.shaderName || '').trim() || '无',
+        config: String(uploadForm.value.shaderPreset || '').trim() || '无',
+      };
+
+      const nowSec = Math.floor(Date.now() / 1000);
+
+      let position = { x: 0, y: 0, z: 0, world: 'none', timestamp: nowSec };
+      if (uploadForm.value.hasPosition) {
+        const posWorld = String(uploadForm.value.posWorld || '').trim();
+        const x = Number(String(uploadForm.value.posX || '').trim());
+        const y = Number(String(uploadForm.value.posY || '').trim());
+        const z = Number(String(uploadForm.value.posZ || '').trim());
+        const hasXZ = Number.isFinite(x) && Number.isFinite(z);
+        if (posWorld && hasXZ) {
+          position = {
+            x: x,
+            y: Number.isFinite(y) ? y : 0,
+            z: z,
+            world: posWorld,
+            timestamp: nowSec,
+          };
+        }
+      }
+
+      const playersArr = parsePlayersCsv(uploadForm.value.players);
+
+      uploading.value = true;
+      uploadStepText.value = '创建上传任务…';
+
+      try {
+        const conf = await fetchConfig();
+        const galleryApiBase = getEffectiveGalleryApiBase(conf);
+
+        // Step 1: create
+        const createParams = new URLSearchParams();
+        createParams.append('username', username);
+        createParams.append('password', password);
+        createParams.append('name', name);
+        createParams.append('annotation', annotation);
+        createParams.append('world', String(worldId));
+        createParams.append('type', String(typeId));
+        createParams.append('year', String(Math.floor(yearNum)));
+        createParams.append('players', JSON.stringify(playersArr));
+        createParams.append('shader', JSON.stringify(shader));
+        createParams.append('position', JSON.stringify(position));
+        createParams.append('metadata', JSON.stringify(uploadForm.value.metaReady ? uploadForm.value.meta : {}));
+        createParams.append('timestamp', String(nowSec));
+
+        const createRes = await fetch(`${galleryApiBase}/gallery/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: createParams,
+        });
+
+        if (createRes.status === 401) {
+          throw new Error('密码错误（401）');
+        }
+        if (!createRes.ok) {
+          const txt = await createRes.text().catch(() => '');
+          throw new Error(`创建失败：${createRes.status} ${txt}`);
+        }
+
+        const createData = await createRes.json().catch(() => null);
+        const uploadId = createData && createData.id ? String(createData.id) : '';
+        if (!uploadId) {
+          throw new Error(`创建成功但缺少上传ID：${JSON.stringify(createData)}`);
+        }
+
+        // Step 2: upload
+        uploadStepText.value = '上传文件中…';
+        const formData = new FormData();
+        formData.append('username', username);
+        formData.append('password', password);
+        formData.append('id', uploadId);
+        formData.append('file', f, f.name);
+
+        const uploadRes = await fetch(`${galleryApiBase}/gallery/upload`, {
+          method: 'POST',
+          body: formData,
+        });
+
+        let uploadData = null;
+        try {
+          uploadData = await uploadRes.json();
+        } catch (e) {
+          const txt = await uploadRes.text().catch(() => '');
+          throw new Error(`上传响应解析失败：${uploadRes.status} ${txt}`);
+        }
+
+        const msg = uploadData && uploadData.message ? String(uploadData.message) : '';
+        const ok = uploadRes.ok && (msg.includes('File uploaded successfully') || msg.includes('success') || uploadData.ok === true);
+        if (!ok) {
+          throw new Error(`上传失败：${msg || JSON.stringify(uploadData)}`);
+        }
+
+        uploadStepText.value = '';
+        try { ElementPlus.ElMessage.success('上传成功'); } catch (e) {}
+        try { localStorage.setItem('username', username); } catch (e) {}
+        uploadVisible.value = false;
+
+        // Refresh list
+        noMore.value = false;
+        await loadPage(1, false);
+      } catch (e) {
+        uploadError.value = e && e.message ? e.message : String(e);
+      } finally {
+        uploading.value = false;
+      }
     }
 
     function ymdhmFromTs(v) {
@@ -578,6 +914,20 @@ const app = createApp({
       detailLoading,
       detailError,
       detail,
+
+      // upload
+      uploadVisible,
+      uploading,
+      uploadError,
+      uploadStepText,
+      uploadFileList,
+      uploadForm,
+      openUpload,
+      onUploadClosed,
+      onUploadFileChange,
+      onUploadFileRemove,
+      submitUpload,
+
       setYear,
       setWorld,
       setType,
