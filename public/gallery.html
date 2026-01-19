@@ -225,10 +225,7 @@
               <el-divider style="margin:12px 0" />
 
               <el-form-item label="用户名">
-                <el-input v-model="uploadForm.username" placeholder="用于上传鉴权"></el-input>
-              </el-form-item>
-              <el-form-item label="上传密码">
-                <el-input v-model="uploadForm.password" type="password" show-password placeholder="请输入上传密码"></el-input>
+                <el-input v-model="uploadForm.username" disabled placeholder="请先登录"></el-input>
               </el-form-item>
 
               <el-form-item label="世界">
@@ -242,7 +239,7 @@
                 </el-select>
               </el-form-item>
               <el-form-item label="年份">
-                <el-input v-model="uploadForm.year" placeholder="如 2026"></el-input>
+                <el-input v-model="uploadForm.year" disabled></el-input>
               </el-form-item>
               <el-form-item label="图片名">
                 <el-input v-model="uploadForm.name" placeholder="请输入图片名称"></el-input>

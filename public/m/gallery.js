@@ -185,9 +185,8 @@ const app = createApp({
     }
 
     function getEffectiveImgBase(conf) {
-      const fromConf = conf && (conf.galleryImgBase || conf.gallery_img_base);
-      if (fromConf) return String(fromConf);
-      return 'https://api-gallery-img.agatha.org.cn';
+      // 本地化后：数据库直接存 OSS 的绝对 URL，不需要额外 base。
+      return '';
     }
 
     function buildListEndpoint(pageNum) {

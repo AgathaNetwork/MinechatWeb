@@ -89,7 +89,6 @@ const app = createApp({
 
     const uploadForm = ref({
       username: localStorage.getItem('username') || '',
-      password: '',
       world: null,
       type: null,
       year: String(new Date().getFullYear()),
@@ -147,23 +146,6 @@ const app = createApp({
       return conf;
     }
 
-    function getEffectiveGalleryApiBase(conf) {
-      const fromConf = conf && (conf.galleryApiBase || conf.gallery_api_base);
-      if (fromConf) return String(fromConf).replace(/\/+$/, '');
-
-      const imgBase = conf && (conf.galleryImgBase || conf.gallery_img_base);
-      if (imgBase) {
-        const s = String(imgBase).trim();
-        if (/^https?:\/\//i.test(s)) {
-          try {
-            return new URL(s).origin;
-          } catch (e) {}
-        }
-      }
-
-      return 'https://api-gallery.agatha.org.cn';
-    }
-
     function resetUploadState() {
       uploadError.value = '';
       uploadStepText.value = '';
@@ -172,7 +154,6 @@ const app = createApp({
       selectedUploadFile.value = null;
       uploadForm.value = {
         username: localStorage.getItem('username') || '',
-        password: '',
         world: null,
         type: null,
         year: String(new Date().getFullYear()),
@@ -304,16 +285,7 @@ const app = createApp({
         return;
       }
 
-      const username = String(uploadForm.value.username || '').trim();
-      const password = String(uploadForm.value.password || '');
-      if (!username) {
-        try { ElementPlus.ElMessage.warning('请输入用户名'); } catch (e) {}
-        return;
-      }
-      if (!password) {
-        try { ElementPlus.ElMessage.warning('请输入上传密码'); } catch (e) {}
-        return;
-      }
+      // Upload is authenticated by Minechat token/session (Authorization: Bearer ...)
 
       const worldId = uploadForm.value.world;
       const typeId = uploadForm.value.type;
@@ -328,8 +300,9 @@ const app = createApp({
 
       const yearText = String(uploadForm.value.year || '').trim();
       const yearNum = Number(yearText);
-      if (!yearText || !Number.isFinite(yearNum) || yearNum < 2000 || yearNum > 3000) {
-        try { ElementPlus.ElMessage.warning('请输入有效年份'); } catch (e) {}
+      const currentYear = new Date().getFullYear();
+      if (!yearText || !Number.isFinite(yearNum) || Math.floor(yearNum) !== currentYear) {
+        try { ElementPlus.ElMessage.warning('年份必须为当年'); } catch (e) {}
         return;
       }
 
@@ -375,13 +348,10 @@ const app = createApp({
       uploadStepText.value = '创建上传任务…';
 
       try {
-        const conf = await fetchConfig();
-        const galleryApiBase = getEffectiveGalleryApiBase(conf);
+        await fetchConfig();
 
         // Step 1: create
         const createParams = new URLSearchParams();
-        createParams.append('username', username);
-        createParams.append('password', password);
         createParams.append('name', name);
         createParams.append('annotation', annotation);
         createParams.append('world', String(worldId));
@@ -393,15 +363,12 @@ const app = createApp({
         createParams.append('metadata', JSON.stringify(uploadForm.value.metaReady ? uploadForm.value.meta : {}));
         createParams.append('timestamp', String(nowSec));
 
-        const createRes = await fetch(`${galleryApiBase}/gallery/create`, {
+        const createRes = await safeFetch(`${apiBase.value}/gallery/create`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: createParams,
         });
 
-        if (createRes.status === 401) {
-          throw new Error('密码错误（401）');
-        }
         if (!createRes.ok) {
           const txt = await createRes.text().catch(() => '');
           throw new Error(`创建失败：${createRes.status} ${txt}`);
@@ -416,12 +383,10 @@ const app = createApp({
         // Step 2: upload
         uploadStepText.value = '上传文件中…';
         const formData = new FormData();
-        formData.append('username', username);
-        formData.append('password', password);
         formData.append('id', uploadId);
         formData.append('file', f, f.name);
 
-        const uploadRes = await fetch(`${galleryApiBase}/gallery/upload`, {
+        const uploadRes = await safeFetch(`${apiBase.value}/gallery/upload`, {
           method: 'POST',
           body: formData,
         });
@@ -442,7 +407,6 @@ const app = createApp({
 
         uploadStepText.value = '';
         try { ElementPlus.ElMessage.success('上传成功'); } catch (e) {}
-        try { localStorage.setItem('username', username); } catch (e) {}
         uploadVisible.value = false;
 
         // Refresh list
@@ -530,10 +494,8 @@ const app = createApp({
     }
 
     function getEffectiveImgBase(conf) {
-      // 支持在 /config 返回 galleryImgBase；否则按旧版默认 host（可按需修改）
-      const fromConf = conf && (conf.galleryImgBase || conf.gallery_img_base);
-      if (fromConf) return String(fromConf);
-      return 'https://api-gallery-img.agatha.org.cn';
+      // 本地化后：数据库直接存 OSS 的绝对 URL，不需要额外 base。
+      return '';
     }
 
     function buildListEndpoint(pageNum) {

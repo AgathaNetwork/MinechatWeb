@@ -70,14 +70,7 @@ app.use(
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/config', (req, res) => {
-  // `galleryImgBase` is optional. When provided, frontends can normalize image URLs.
-  const galleryImgBase = config.gallery_img_base ? String(config.gallery_img_base) : undefined;
-
-  // Optional: gallery API base for create/upload endpoints.
-  // Example: https://api-gallery.agatha.org.cn
-  const galleryApiBase = config.gallery_api_base ? String(config.gallery_api_base) : undefined;
-
-  res.json({ apiBase, apiProxyBase: '/api', galleryImgBase, galleryApiBase });
+  res.json({ apiBase, apiProxyBase: '/api' });
 });
 
 app.get('/health', (req, res) => res.json({ ok: true, apiBase }));

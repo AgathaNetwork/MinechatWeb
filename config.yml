@@ -4,11 +4,3 @@ api_port: 3000
 # Port the frontend will listen on
 frontend_port: 4000
 
-# Optional: gallery image host/base URL.
-# If your gallery API returns relative image paths, the frontend will prepend this base.
-# Example: https://api-gallery-img.agatha.org.cn
-gallery_img_base: https://api-gallery.agatha.org.cn/uploads/
-
-# Optional: gallery API base for manual upload (create/upload).
-# Example: https://api-gallery.agatha.org.cn
-gallery_api_base: https://api-gallery.agatha.org.cn
