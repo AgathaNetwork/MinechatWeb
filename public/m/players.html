@@ -65,8 +65,9 @@
             </div>
           </template>
           <template #default>
-            <div v-for="u in filtered" :key="u.id" class="player-item">
-              <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+            <div v-for="u in filtered" :key="u.id" style="border-bottom:1px solid var(--mc-border)">
+              <div class="player-item" style="border-bottom:none">
+                <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
                 <el-checkbox
                   v-if="groupMode"
                   :model-value="isSelected(u.id)"
@@ -79,14 +80,55 @@
                   <div style="font-weight:500">{{ u.username || u.id }}</div>
                   <div class="player-uuid-ellipsis" style="font-size:12px;color:#888">{{ u.mcUuid || '' }}</div>
                 </div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;flex:0 0 auto">
+                  <el-button size="small" type="primary" plain circle title="查看" @click="openBrief(u)">
+                    <el-icon><postcard /></el-icon>
+                  </el-button>
+                  <el-button size="small" type="primary" plain circle title="私聊" @click="openChat(u.id)">
+                    <el-icon><chat-line-round /></el-icon>
+                  </el-button>
+                  <el-button size="small" type="primary" plain circle title="文件" @click="toggleUserDisk(u)">
+                    <el-icon><folder-opened /></el-icon>
+                  </el-button>
+                </div>
               </div>
-              <div style="display:flex;gap:8px;align-items:center;flex:0 0 auto">
-                <el-button size="small" type="primary" plain circle title="查看" @click="openBrief(u)">
-                  <el-icon><postcard /></el-icon>
-                </el-button>
-                <el-button size="small" type="primary" plain circle title="私聊" @click="openChat(u.id)">
-                  <el-icon><chat-line-round /></el-icon>
-                </el-button>
+
+              <div v-if="isUserDiskOpen(u.id)" style="padding:0 12px 12px 12px">
+                <el-skeleton animated :loading="getUserDiskLoading(u.id)">
+                  <template #template>
+                    <el-skeleton-item variant="text" style="width:60%"></el-skeleton-item>
+                    <el-skeleton-item variant="text" style="width:45%;margin-top:8px"></el-skeleton-item>
+                  </template>
+                  <template #default>
+                    <div v-if="getUserDiskError(u.id)" style="margin-top:8px">
+                      <el-alert type="error" :closable="false" show-icon title="加载文件失败"></el-alert>
+                      <div style="margin-top:6px;font-size:12px;color:#666;word-break:break-all">{{ getUserDiskError(u.id) }}</div>
+                    </div>
+
+                    <div v-else>
+                      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px">
+                        <div style="font-size:12px;color:#888">网盘文件</div>
+                        <el-button size="small" plain @click="refreshUserDisk(u.id)">刷新</el-button>
+                      </div>
+
+                      <div v-if="getUserDiskFiles(u.id).length===0" style="font-size:12px;color:#888;margin-top:8px">暂无文件</div>
+
+                      <div v-for="f in getUserDiskFiles(u.id)" :key="f.id" style="padding:8px 0;border-bottom:1px dashed var(--mc-border)">
+                        <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+                          <div style="min-width:0;flex:1">
+                            <div style="font-size:13px;font-weight:500;word-break:break-all">{{ f.name }}</div>
+                            <div style="font-size:12px;color:#888;margin-top:2px">{{ f.sizeText }}</div>
+                          </div>
+                          <div style="display:flex;gap:8px;flex:0 0 auto">
+                            <el-button size="small" plain @click="openDiskFileDetail(f)">查看</el-button>
+                            <el-button size="small" type="primary" plain @click="downloadDiskFile(f)">下载</el-button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                </el-skeleton>
               </div>
             </div>
           </template>
@@ -135,6 +177,18 @@
             </div>
           </template>
         </el-skeleton>
+      </el-dialog>
+
+      <el-dialog v-model="diskFileDialogVisible" title="文件" width="92%" top="10vh">
+        <div v-if="diskFileDialogFile">
+          <div style="font-weight:600;word-break:break-all">{{ diskFileDialogFile.name }}</div>
+          <div style="font-size:12px;color:#888;margin-top:6px">大小：{{ diskFileDialogFile.sizeText }}</div>
+          <div style="font-size:12px;color:#888;margin-top:6px" v-if="diskFileDialogFile.createdAtText">上传：{{ diskFileDialogFile.createdAtText }}</div>
+          <div style="display:flex;gap:10px;margin-top:12px;justify-content:flex-end">
+            <el-button @click="diskFileDialogVisible=false">关闭</el-button>
+            <el-button type="primary" plain @click="downloadDiskFile(diskFileDialogFile)">下载</el-button>
+          </div>
+        </div>
       </el-dialog>
 
       <div class="bottom-nav">

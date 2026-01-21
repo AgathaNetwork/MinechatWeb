@@ -28,6 +28,40 @@ const app = createApp({
     const briefPasteHtml = ref('');
     const briefPasteTimeText = ref('');
 
+    const openDiskUserId = ref(null);
+    const userDiskState = reactive({});
+    const diskFileDialogVisible = ref(false);
+    const diskFileDialogFile = ref(null);
+
+    function fixMojibakeName(input) {
+      const s = String(input === undefined || input === null ? '' : input);
+      if (!s) return s;
+      if (/[\u4e00-\u9fff]/.test(s)) return s;
+      if (!/[ÃÂåæçèéêëìíîïñòóôöõùúûüýÿ]/.test(s)) return s;
+      try {
+        const bytes = new Uint8Array(s.length);
+        for (let i = 0; i < s.length; i += 1) bytes[i] = s.charCodeAt(i) & 0xff;
+        const fixed = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+        const cjkCount = (t) => (String(t).match(/[\u4e00-\u9fff]/g) || []).length;
+        if (cjkCount(fixed) > cjkCount(s)) return fixed;
+      } catch (e) {}
+      return s;
+    }
+
+    function formatBytes(bytes) {
+      const n = Number(bytes);
+      if (!Number.isFinite(n) || n < 0) return '-';
+      const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+      let v = n;
+      let i = 0;
+      while (v >= 1024 && i < units.length - 1) {
+        v /= 1024;
+        i += 1;
+      }
+      const digits = i === 0 ? 0 : i === 1 ? 1 : 2;
+      return `${v.toFixed(digits)} ${units[i]}`;
+    }
+
     function escapeHtml(s){
       return String(s || '')
         .replace(/&/g, '&amp;')
@@ -188,6 +222,117 @@ const app = createApp({
         opt.credentials = 'include';
       }
       return fetch(url, opt);
+    }
+
+    function isUserDiskOpen(userId) {
+      const id = userId !== undefined && userId !== null ? String(userId) : '';
+      return !!id && String(openDiskUserId.value || '') === id;
+    }
+
+    function ensureUserDiskEntry(userId) {
+      const id = userId !== undefined && userId !== null ? String(userId) : '';
+      if (!id) return null;
+      if (!userDiskState[id]) {
+        userDiskState[id] = { loading: false, error: '', files: [] };
+      }
+      return userDiskState[id];
+    }
+
+    function getUserDiskLoading(userId) {
+      const e = ensureUserDiskEntry(userId);
+      return e ? !!e.loading : false;
+    }
+
+    function getUserDiskError(userId) {
+      const e = ensureUserDiskEntry(userId);
+      return e ? String(e.error || '') : '';
+    }
+
+    function getUserDiskFiles(userId) {
+      const e = ensureUserDiskEntry(userId);
+      return e && Array.isArray(e.files) ? e.files : [];
+    }
+
+    async function loadUserDisk(userId) {
+      const id = userId !== undefined && userId !== null ? String(userId) : '';
+      if (!id) return;
+      const entry = ensureUserDiskEntry(id);
+      entry.loading = true;
+      entry.error = '';
+      try {
+        if (!apiBase.value) await fetchConfig();
+        const res = await safeFetch(`${apiBase.value}/disk/user/${encodeURIComponent(id)}?limit=100`, { method: 'GET' });
+        if (!res.ok) {
+          const txt = await res.text().catch(() => '');
+          throw new Error(txt || `请求失败：${res.status}`);
+        }
+        const data = await res.json().catch(() => null);
+        const arr = Array.isArray(data) ? data : [];
+        entry.files = arr.map((x) => {
+          const d = parseDate(x.created_at);
+          return {
+            id: x.id,
+            name: fixMojibakeName(x.name),
+            size: x.size,
+            sizeText: formatBytes(x.size),
+            createdAtText: d ? formatYmdHm(d) : '',
+          };
+        });
+      } catch (e) {
+        entry.error = e?.message || String(e);
+        entry.files = [];
+      } finally {
+        entry.loading = false;
+      }
+    }
+
+    async function refreshUserDisk(userId) {
+      await loadUserDisk(userId);
+    }
+
+    async function toggleUserDisk(u) {
+      const id = u && u.id !== undefined && u.id !== null ? String(u.id) : '';
+      if (!id) return;
+      if (String(openDiskUserId.value || '') === id) {
+        openDiskUserId.value = null;
+        return;
+      }
+      openDiskUserId.value = id;
+      await loadUserDisk(id);
+    }
+
+    function openDiskFileDetail(f) {
+      diskFileDialogFile.value = f || null;
+      diskFileDialogVisible.value = true;
+    }
+
+    async function downloadDiskFile(f) {
+      const id = f && f.id !== undefined && f.id !== null ? String(f.id) : '';
+      if (!id) return;
+      try {
+        if (!apiBase.value) await fetchConfig();
+        const res = await safeFetch(`${apiBase.value}/disk/${encodeURIComponent(id)}/download`, { method: 'GET' });
+        if (!res.ok) {
+          const txt = await res.text().catch(() => '');
+          throw new Error(txt || `请求失败：${res.status}`);
+        }
+        const blob = await res.blob();
+        const name = String((f && f.name) || 'file');
+        const url = URL.createObjectURL(blob);
+        try {
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = name;
+          a.style.display = 'none';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        } finally {
+          try { URL.revokeObjectURL(url); } catch (e) {}
+        }
+      } catch (e) {
+        ElementPlus.ElMessage.error(e?.message || String(e));
+      }
     }
 
     async function loadUsers() {
@@ -413,6 +558,17 @@ const app = createApp({
       briefPasteMarkdown,
       briefPasteHtml,
       briefPasteTimeText,
+
+      toggleUserDisk,
+      isUserDiskOpen,
+      getUserDiskLoading,
+      getUserDiskError,
+      getUserDiskFiles,
+      refreshUserDisk,
+      openDiskFileDetail,
+      downloadDiskFile,
+      diskFileDialogVisible,
+      diskFileDialogFile,
 
       // group
       selfUserId,
