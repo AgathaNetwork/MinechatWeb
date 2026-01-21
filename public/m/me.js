@@ -1488,6 +1488,10 @@ const app = createApp({
       window.location.href = '/m/map.html';
     }
 
+    function gotoDisk() {
+      window.location.href = '/m/disk.html';
+    }
+
     onMounted(async () => {
       await fetchConfig();
       await loadSelf();
@@ -1517,6 +1521,7 @@ const app = createApp({
       gotoInfo,
       gotoMaterials,
       gotoBigMap,
+      gotoDisk,
 
       // account dialogs
       idDialogVisible,
