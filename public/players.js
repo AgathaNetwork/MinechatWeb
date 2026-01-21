@@ -26,6 +26,76 @@ const app = createApp({
     const briefFaceUrl = ref('');
     const briefInitial = ref('');
 
+    const briefPasteMarkdown = ref('');
+    const briefPasteHtml = ref('');
+    const briefPasteTimeText = ref('');
+
+    function escapeHtml(s){
+      return String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function sanitizeUrl(url){
+      const u = String(url || '').trim();
+      if(!u) return '';
+      if(/^https?:\/\//i.test(u)) return u;
+      if(/^mailto:/i.test(u)) return u;
+      return '';
+    }
+
+    function renderMarkdown(md){
+      const input = String(md || '').replace(/\r\n/g,'\n');
+      if(!input.trim()) return '';
+
+      const blocks = [];
+      const placeholder = (i)=>`@@CODEBLOCK_${i}@@`;
+      let text = input.replace(/```([\w-]+)?\n([\s\S]*?)\n```/g, (m, lang, code) => {
+        const html = `<pre><code>${escapeHtml(code)}</code></pre>`;
+        const idx = blocks.push(html) - 1;
+        return placeholder(idx);
+      });
+
+      text = escapeHtml(text);
+
+      text = text.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
+      text = text.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
+      text = text.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
+
+      text = text.replace(/\[([^\]]+?)\]\(([^\)]+?)\)/g, (m, label, url) => {
+        const safe = sanitizeUrl(url);
+        if(!safe) return label;
+        return `<a href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+      });
+
+      text = text.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
+      text = text.replace(/\*([^*\n]+?)\*/g, '<em>$1</em>');
+      text = text.replace(/`([^`\n]+?)`/g, '<code>$1</code>');
+
+      text = text.replace(/^(?:\s*[-*]\s+.+\n?)+/gm, (block) => {
+        const items = block
+          .trimEnd()
+          .split(/\n/)
+          .map(l => l.replace(/^\s*[-*]\s+/, '').trim())
+          .filter(Boolean)
+          .map(it => `<li>${it}</li>`)
+          .join('');
+        return items ? `<ul>${items}</ul>` : block;
+      });
+
+      const parts = text.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
+      text = parts.map(p => {
+        if(/^<\/?(h1|h2|h3|ul|pre)/.test(p)) return p;
+        return `<p>${p.replace(/\n/g,'<br>')}</p>`;
+      }).join('\n');
+
+      text = text.replace(/@@CODEBLOCK_(\d+)@@/g, (m, i) => blocks[Number(i)] || '');
+      return text;
+    }
+
     function parseDate(v){
       try{
         if(v === null || v === undefined) return null;
@@ -294,6 +364,9 @@ const app = createApp({
       briefLoading.value = true;
       briefError.value = '';
       briefRows.value = [];
+      briefPasteMarkdown.value = '';
+      briefPasteHtml.value = '';
+      briefPasteTimeText.value = '';
 
       const name = user && (user.username || user.id) ? String(user.username || user.id) : '';
       const uuid = user && (user.mcUuid || user.minecraftUuid || user.uuid) ? String(user.mcUuid || user.minecraftUuid || user.uuid) : '';
@@ -311,12 +384,17 @@ const app = createApp({
       }
 
       try{
-        const res = await safeFetch(`${apiBase.value}/info/playerBrief?username=${encodeURIComponent(name)}`);
-        if(!res.ok){
-          const txt = await res.text().catch(()=> '');
-          throw new Error(txt || `HTTP ${res.status}`);
+        const [briefRes, pasteRes] = await Promise.all([
+          safeFetch(`${apiBase.value}/info/playerBrief?username=${encodeURIComponent(name)}`),
+          safeFetch(`${apiBase.value}/info/playerPaste?username=${encodeURIComponent(name)}`),
+        ]);
+
+        if(!briefRes.ok){
+          const txt = await briefRes.text().catch(()=> '');
+          throw new Error(txt || `HTTP ${briefRes.status}`);
         }
-        const data = await res.json().catch(()=> null);
+
+        const data = await briefRes.json().catch(()=> null);
         if(!data || typeof data !== 'object' || Number(data.return) !== 1){
           briefError.value = '未查询到玩家信息';
           return;
@@ -330,6 +408,20 @@ const app = createApp({
           { k: '注册时间', v: regDt ? formatYmd(regDt) : '-' },
           { k: '上次上线', v: lastDt ? formatYmdHm(lastDt) : '-' },
         ];
+
+        if(pasteRes && pasteRes.ok){
+          const p = await pasteRes.json().catch(()=> null);
+          if(p && typeof p === 'object' && Number(p.return) === 1 && p.content){
+            briefPasteMarkdown.value = String(p.content);
+            briefPasteHtml.value = renderMarkdown(briefPasteMarkdown.value);
+            const t = Number(p.time);
+            if(Number.isFinite(t)){
+              const ms = t > 1e12 ? t : t * 1000;
+              const dt = new Date(ms);
+              if(!isNaN(dt.getTime())) briefPasteTimeText.value = `时间：${formatYmdHm(dt)}`;
+            }
+          }
+        }
       }catch(e){
         briefError.value = e && e.message ? e.message : String(e);
       }finally{
@@ -367,6 +459,9 @@ const app = createApp({
       briefUuid,
       briefFaceUrl,
       briefInitial,
+      briefPasteMarkdown,
+      briefPasteHtml,
+      briefPasteTimeText,
 
       // group
       selfUserId,

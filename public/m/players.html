@@ -21,6 +21,12 @@
       .nav-item.active{color:#409eff}
       .player-item{padding:12px;border-bottom:1px solid var(--mc-border);display:flex;justify-content:space-between;align-items:center}
       .player-uuid-ellipsis{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .md{font-size:13px;line-height:1.7;word-break:break-word}
+      .md h1,.md h2,.md h3{margin:10px 0 6px;font-weight:700}
+      .md pre{background:rgba(0,0,0,0.04);padding:10px;border-radius:8px;overflow:auto}
+      .md code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+      .md a{color:var(--el-color-primary);text-decoration:none}
+      .md a:hover{text-decoration:underline}
     </style>
   </head>
   <body>
@@ -120,6 +126,12 @@
                 <el-table-column prop="k" width="120"></el-table-column>
                 <el-table-column prop="v"></el-table-column>
               </el-table>
+            </div>
+
+            <div style="margin-top:12px" v-if="briefPasteMarkdown">
+              <el-divider content-position="left">签名档</el-divider>
+              <div style="font-size:12px;color:#888;margin-bottom:8px" v-if="briefPasteTimeText">{{ briefPasteTimeText }}</div>
+              <div class="md" v-html="briefPasteHtml"></div>
             </div>
           </template>
         </el-skeleton>
