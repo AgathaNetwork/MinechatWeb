@@ -30,6 +30,17 @@ const app = createApp({
     const briefPasteHtml = ref('');
     const briefPasteTimeText = ref('');
 
+    // Per-user disk view
+    const userDiskOpenMap = ref({});
+    const userDiskLoadingMap = ref({});
+    const userDiskErrorMap = ref({});
+    const userDiskFilesMap = ref({});
+
+    const diskDialogVisible = ref(false);
+    const diskDialogRows = ref([]);
+    const diskDialogFile = ref(null);
+    const diskDialogHint = ref('');
+
     function escapeHtml(s){
       return String(s || '')
         .replace(/&/g, '&amp;')
@@ -137,6 +148,17 @@ const app = createApp({
       }catch(e){
         return '';
       }
+    }
+
+    function formatBytes(bytes){
+      const n = Number(bytes);
+      if(!Number.isFinite(n) || n < 0) return '-';
+      const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+      let v = n;
+      let i = 0;
+      while(v >= 1024 && i < units.length - 1){ v /= 1024; i += 1; }
+      const digits = i === 0 ? 0 : i === 1 ? 1 : 2;
+      return `${v.toFixed(digits)} ${units[i]}`;
     }
 
     function tokenValue(){
@@ -429,6 +451,110 @@ const app = createApp({
       }
     }
 
+    function normalizeId(v){
+      return v === undefined || v === null ? '' : String(v);
+    }
+
+    function isUserDiskOpen(userId){
+      const id = normalizeId(userId);
+      return id ? !!userDiskOpenMap.value[id] : false;
+    }
+
+    function userDiskLoading(userId){
+      const id = normalizeId(userId);
+      return id ? !!userDiskLoadingMap.value[id] : false;
+    }
+
+    function userDiskError(userId){
+      const id = normalizeId(userId);
+      return id ? (userDiskErrorMap.value[id] || '') : '';
+    }
+
+    function userDiskFiles(userId){
+      const id = normalizeId(userId);
+      return id ? (userDiskFilesMap.value[id] || []) : [];
+    }
+
+    async function loadUserDiskFiles(userId){
+      const id = normalizeId(userId);
+      if(!id) return;
+      userDiskLoadingMap.value = Object.assign({}, userDiskLoadingMap.value, { [id]: true });
+      userDiskErrorMap.value = Object.assign({}, userDiskErrorMap.value, { [id]: '' });
+      try{
+        const res = await safeFetch(`${apiBase.value}/disk/user/${encodeURIComponent(id)}?limit=200`, { method: 'GET' });
+        if(!res.ok){
+          const txt = await res.text().catch(()=> '');
+          throw new Error(txt || `HTTP ${res.status}`);
+        }
+        const data = await res.json().catch(()=> null);
+        const arr = Array.isArray(data) ? data : [];
+        const files = arr.map((x) => ({
+          id: x.id,
+          name: x.name,
+          size: x.size,
+          sizeText: formatBytes(x.size),
+          created_at: x.created_at,
+          updated_at: x.updated_at,
+        }));
+        userDiskFilesMap.value = Object.assign({}, userDiskFilesMap.value, { [id]: files });
+      }catch(e){
+        userDiskErrorMap.value = Object.assign({}, userDiskErrorMap.value, { [id]: e && e.message ? e.message : String(e) });
+      }finally{
+        userDiskLoadingMap.value = Object.assign({}, userDiskLoadingMap.value, { [id]: false });
+      }
+    }
+
+    async function toggleUserDisk(user){
+      const id = normalizeId(user && user.id);
+      if(!id) return;
+      const open = !isUserDiskOpen(id);
+      userDiskOpenMap.value = Object.assign({}, userDiskOpenMap.value, { [id]: open });
+      if(open && !userDiskFilesMap.value[id] && !userDiskLoading(id)){
+        await loadUserDiskFiles(id);
+      }
+    }
+
+    function viewUserDiskFile(user, file){
+      const uName = user && (user.username || user.id) ? String(user.username || user.id) : '';
+      const f = file && typeof file === 'object' ? file : null;
+      if(!f) return;
+      diskDialogFile.value = f;
+      diskDialogHint.value = uName ? `玩家：${uName}` : '';
+      diskDialogRows.value = [
+        { k: '名称', v: String(f.name || '-') },
+        { k: '大小', v: String(f.sizeText || '-') },
+      ];
+      diskDialogVisible.value = true;
+    }
+
+    async function downloadUserDiskFile(file){
+      const f = file && typeof file === 'object' ? file : null;
+      if(!f || !f.id) return;
+      try{
+        const res = await safeFetch(`${apiBase.value}/disk/${encodeURIComponent(f.id)}/download`, { method: 'GET' });
+        if(!res.ok){
+          const txt = await res.text().catch(()=> '');
+          throw new Error(txt || `HTTP ${res.status}`);
+        }
+        const blob = await res.blob();
+        const name = String(f.name || 'file');
+        const url = URL.createObjectURL(blob);
+        try{
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = name;
+          a.style.display = 'none';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        }finally{
+          try{ URL.revokeObjectURL(url); }catch(e){}
+        }
+      }catch(e){
+        try{ ElementPlus.ElMessage.error('下载失败'); }catch(e2){}
+      }
+    }
+
     function onNav(key){
       if(key === 'chat') window.location.href = '/chat.html';
       else if(key === 'players') window.location.href = '/players.html';
@@ -474,6 +600,19 @@ const app = createApp({
       setSelected,
       selectedCount,
       createGroupChat,
+
+      // user disk
+      isUserDiskOpen,
+      toggleUserDisk,
+      userDiskLoading,
+      userDiskError,
+      userDiskFiles,
+      viewUserDiskFile,
+      downloadUserDiskFile,
+      diskDialogVisible,
+      diskDialogRows,
+      diskDialogFile,
+      diskDialogHint,
     };
   }
 });
