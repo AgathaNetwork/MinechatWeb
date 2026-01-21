@@ -907,10 +907,7 @@ const app = createApp({
             throw new Error(detail || '文本审核未配置，暂不允许上传');
           }
           if (code === 'TEXT_AUDIT_BLOCKED') {
-            const sug = data && typeof data === 'object' ? (data.suggestion || '') : '';
-            const labels = data && typeof data === 'object' && Array.isArray(data.labels) ? data.labels.join(',') : '';
-            const msg = ['文本未通过审核', sug ? `建议：${sug}` : '', labels ? `标签：${labels}` : ''].filter(Boolean).join('；');
-            throw new Error(msg || '文本未通过审核');
+            throw new Error('文本未通过审核，请修改后重试');
           }
           if (code === 'CONTENT_TOO_LARGE') throw new Error(detail || '内容过长');
           throw new Error((data && typeof data === 'object' && (data.detail || data.error)) ? String(data.detail || data.error) : `HTTP ${res.status}`);
