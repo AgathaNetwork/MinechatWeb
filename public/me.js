@@ -1011,6 +1011,10 @@ const app = createApp({
     function gotoBigMap() {
       window.location.href = '/map.html';
     }
+
+    function gotoTotp() {
+      window.location.href = '/totp.html';
+    }
     
       function gotoInfo() {
         window.location.href = '/info.html';
@@ -1089,6 +1093,7 @@ const app = createApp({
       gotoLogin,
       gotoMaterials,
       gotoBigMap,
+      gotoTotp,
       gotoInfo,
       logout,
       reloadSelf,

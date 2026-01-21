@@ -51,8 +51,17 @@
                 </div>
               </div>
 
-              <p style="margin-top:0">请使用 Microsoft 帐号登录。</p>
+              <p style="margin-top:0">使用 Microsoft 帐号登录。</p>
               <el-button type="primary" :loading="loggingIn" :disabled="loggingIn || checking" @click="openLoginPopup">使用 Microsoft 登录</el-button>
+
+              <el-divider></el-divider>
+
+              <p style="margin-top:0">使用用户名 + TOTP 登录（已启用二步验证的账号）。</p>
+              <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+                <el-input v-model="totpUsername" placeholder="用户名" style="width:220px" clearable></el-input>
+                <el-input v-model="totpCode" placeholder="TOTP 6位验证码" style="width:220px" clearable maxlength="10"></el-input>
+                <el-button type="success" :loading="totpLoggingIn" :disabled="totpLoggingIn || checking" @click="loginWithTotp">TOTP 登录</el-button>
+              </div>
             </div>
           </el-card>
         </el-main>

@@ -9,6 +9,9 @@ createApp({
     const checking = ref(false);
     const hasSession = ref(false);
     const loggingIn = ref(false);
+    const totpUsername = ref(localStorage.getItem('username') || '');
+    const totpCode = ref('');
+    const totpLoggingIn = ref(false);
 
     const authOk = ref(null); // null | true | false
     const authUserId = ref('');
@@ -128,6 +131,63 @@ createApp({
       }
     }
 
+    async function loginWithTotp() {
+      if (totpLoggingIn.value) return;
+      const username = String(totpUsername.value || '').trim();
+      const code = String(totpCode.value || '').trim();
+      if (!username) return ElementPlus.ElMessage.warning('请输入用户名');
+      if (!code) return ElementPlus.ElMessage.warning('请输入 TOTP');
+
+      totpLoggingIn.value = true;
+      try {
+        await fetchConfig();
+        clearAuthState();
+        const base = apiBase.value || apiAuthBase.value;
+
+        const res = await fetch(`${base}/auth/totp/login`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, totp: code }),
+        });
+
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          const msg = (data && (data.detail || data.error)) ? String(data.detail || data.error) : `登录失败：${res.status}`;
+          throw new Error(msg);
+        }
+
+        const token = data && data.token ? String(data.token) : '';
+        const user = data && data.user ? data.user : null;
+        const chats = data && data.chats ? data.chats : null;
+        const faceUrl = user && user.faceUrl ? String(user.faceUrl) : '';
+        const uname = user && user.username ? String(user.username) : username;
+
+        if (token) {
+          try { localStorage.setItem('token', token); } catch (e) {}
+          tokenInput.value = token;
+          try { sendTokenToHost(token); } catch (e) {}
+        }
+        if (uname) {
+          try { localStorage.setItem('username', uname); } catch (e) {}
+        }
+        if (faceUrl) {
+          try { localStorage.setItem('faceUrl', faceUrl); } catch (e) {}
+        }
+        if (chats) {
+          try { sessionStorage.setItem('chats_cache', JSON.stringify(chats)); } catch (e) {}
+        }
+
+        // clear code after success
+        totpCode.value = '';
+        gotoChat();
+      } catch (e) {
+        try { ElementPlus.ElMessage.error(e?.message || String(e)); } catch (e2) {}
+      } finally {
+        totpLoggingIn.value = false;
+      }
+    }
+
     async function logoutSession() {
       try {
         await fetch(`${apiBase.value}/auth/logout`, { method: 'POST', credentials: 'include' });
@@ -225,6 +285,10 @@ createApp({
       loggingIn,
       hasSession,
       openLoginPopup,
+      totpUsername,
+      totpCode,
+      totpLoggingIn,
+      loginWithTotp,
       applyToken,
       gotoChat,
       logoutSession,
