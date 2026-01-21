@@ -52,6 +52,95 @@ const app = createApp({
     const historyList = ref([]);
     const historyError = ref('');
 
+    // Account services: Paste (openid.pastes)
+    const pasteDialogVisible = ref(false);
+    const pasteLoading = ref(false);
+    const pasteSaving = ref(false);
+    const pasteError = ref('');
+    const pasteResult = ref('');
+    const pasteExistingMarkdown = ref('');
+    const pasteExistingTimeText = ref('');
+    const pasteEditMarkdown = ref('');
+
+    function escapeHtml(s) {
+      return String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function sanitizeUrl(url) {
+      const u = String(url || '').trim();
+      if (!u) return '';
+      if (/^https?:\/\//i.test(u)) return u;
+      if (/^mailto:/i.test(u)) return u;
+      return '';
+    }
+
+    function renderMarkdown(md) {
+      const input = String(md || '').replace(/\r\n/g, '\n');
+      if (!input.trim()) return '';
+
+      const blocks = [];
+      const placeholder = (i) => `@@CODEBLOCK_${i}@@`;
+      let text = input.replace(/```([\w-]+)?\n([\s\S]*?)\n```/g, (m, lang, code) => {
+        const html = `<pre><code>${escapeHtml(code)}</code></pre>`;
+        const idx = blocks.push(html) - 1;
+        return placeholder(idx);
+      });
+
+      text = escapeHtml(text);
+
+      text = text.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
+      text = text.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
+      text = text.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
+
+      text = text.replace(/\[([^\]]+?)\]\(([^\)]+?)\)/g, (m, label, url) => {
+        const safe = sanitizeUrl(url);
+        if (!safe) return label;
+        return `<a href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+      });
+
+      text = text.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
+      text = text.replace(/\*([^*\n]+?)\*/g, '<em>$1</em>');
+      text = text.replace(/`([^`\n]+?)`/g, '<code>$1</code>');
+
+      text = text.replace(/^(?:\s*[-*]\s+.+\n?)+/gm, (block) => {
+        const items = block
+          .trimEnd()
+          .split(/\n/)
+          .map((l) => l.replace(/^\s*[-*]\s+/, '').trim())
+          .filter(Boolean)
+          .map((it) => `<li>${it}</li>`)
+          .join('');
+        return items ? `<ul>${items}</ul>` : block;
+      });
+
+      const parts = text
+        .split(/\n\n+/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+      text = parts
+        .map((p) => {
+          if (/^<\/?(h1|h2|h3|ul|pre)/.test(p)) return p;
+          return `<p>${p.replace(/\n/g, '<br>')}</p>`;
+        })
+        .join('\n');
+
+      text = text.replace(/@@CODEBLOCK_(\d+)@@/g, (m, i) => blocks[Number(i)] || '');
+      return text;
+    }
+
+    const pastePreviewHtml = computed(() => {
+      try {
+        return renderMarkdown(pasteEditMarkdown.value);
+      } catch (e) {
+        return '';
+      }
+    });
+
     // Game services: Home query
     const homeDialogVisible = ref(false);
     const homeLoading = ref(false);
@@ -742,6 +831,102 @@ const app = createApp({
       return res;
     }
 
+    function formatTsForHint(ts) {
+      try {
+        const t = Number(ts);
+        if (!Number.isFinite(t) || t <= 0) return '';
+        const ms = t > 1e12 ? t : t * 1000;
+        const d = new Date(ms);
+        if (isNaN(d.getTime())) return '';
+        return formatYmdHm(d);
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function openPasteDialog() {
+      pasteDialogVisible.value = true;
+      pasteError.value = '';
+      pasteResult.value = '';
+      if (isLoggedIn.value) loadPasteExisting(true);
+      else ElementPlus.ElMessage.warning('请先登录');
+    }
+
+    async function loadPasteExisting(fillEditIfEmpty) {
+      if (pasteLoading.value) return;
+      pasteLoading.value = true;
+      pasteError.value = '';
+      pasteResult.value = '';
+      try {
+        const u = String(selfUsername.value || '').trim();
+        if (!u) throw new Error('未识别到用户名');
+
+        const res = await safeFetch(`${apiBase.value}/info/playerPaste?username=${encodeURIComponent(u)}`);
+        if (!res.ok) {
+          const txt = await res.text().catch(() => '');
+          throw new Error(txt || `HTTP ${res.status}`);
+        }
+        const data = await res.json().catch(() => null);
+        if (!data || typeof data !== 'object' || Number(data.return) !== 1 || !data.content) {
+          pasteExistingMarkdown.value = '';
+          pasteExistingTimeText.value = '';
+          if (fillEditIfEmpty && !String(pasteEditMarkdown.value || '').trim()) pasteEditMarkdown.value = '';
+          return;
+        }
+
+        pasteExistingMarkdown.value = String(data.content || '');
+        pasteExistingTimeText.value = formatTsForHint(data.time);
+        if (fillEditIfEmpty && !String(pasteEditMarkdown.value || '').trim()) pasteEditMarkdown.value = pasteExistingMarkdown.value;
+      } catch (e) {
+        pasteError.value = e && e.message ? e.message : String(e);
+      } finally {
+        pasteLoading.value = false;
+      }
+    }
+
+    async function savePaste() {
+      if (pasteSaving.value) return;
+      pasteSaving.value = true;
+      pasteError.value = '';
+      pasteResult.value = '';
+      try {
+        const text = String(pasteEditMarkdown.value || '');
+        if (!text.trim()) throw new Error('内容不能为空');
+
+        const res = await safeFetch(`${apiBase.value}/info/playerPaste`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: text }),
+        });
+
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          const code = data && typeof data === 'object' ? data.error : '';
+          const detail = data && typeof data === 'object' ? (data.detail || '') : '';
+          if (code === 'TEXT_AUDIT_NOT_CONFIGURED') {
+            throw new Error(detail || '文本审核未配置，暂不允许上传');
+          }
+          if (code === 'TEXT_AUDIT_BLOCKED') {
+            const sug = data && typeof data === 'object' ? (data.suggestion || '') : '';
+            const labels = data && typeof data === 'object' && Array.isArray(data.labels) ? data.labels.join(',') : '';
+            const msg = ['文本未通过审核', sug ? `建议：${sug}` : '', labels ? `标签：${labels}` : ''].filter(Boolean).join('；');
+            throw new Error(msg || '文本未通过审核');
+          }
+          if (code === 'CONTENT_TOO_LARGE') throw new Error(detail || '内容过长');
+          throw new Error((data && typeof data === 'object' && (data.detail || data.error)) ? String(data.detail || data.error) : `HTTP ${res.status}`);
+        }
+
+        pasteResult.value = '已提交并通过审核（以服务器返回为准）';
+        ElementPlus.ElMessage.success('提交成功');
+        await loadPasteExisting(false);
+      } catch (e) {
+        pasteError.value = e && e.message ? e.message : String(e);
+        ElementPlus.ElMessage.error('提交失败');
+      } finally {
+        pasteSaving.value = false;
+      }
+    }
+
     function extractCreatedAt(obj) {
       try {
         if (!obj || typeof obj !== 'object') return '';
@@ -1350,6 +1535,18 @@ const app = createApp({
       historyError,
       openHistoryDialog,
       runHistoryQuery,
+
+      pasteDialogVisible,
+      pasteLoading,
+      pasteSaving,
+      pasteError,
+      pasteResult,
+      pasteExistingTimeText,
+      pasteEditMarkdown,
+      pastePreviewHtml,
+      openPasteDialog,
+      loadPasteExisting,
+      savePaste,
 
       // game services
       homeDialogVisible,

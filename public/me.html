@@ -99,6 +99,10 @@
                 <el-icon style="margin-right:4px"><setting /></el-icon>
                 TOTP 管理
               </el-button>
+              <el-button plain @click="openPasteDialog">
+                <el-icon style="margin-right:4px"><edit /></el-icon>
+                设置签名档
+              </el-button>
               <el-button plain @click="openIdDialog">
                 <el-icon style="margin-right:4px"><document /></el-icon>
                 实名认证查询
@@ -267,6 +271,55 @@
                 <el-table-column prop="time" label="时间" min-width="160"></el-table-column>
                 <el-table-column prop="ip" label="IP" min-width="140"></el-table-column>
               </el-table>
+            </div>
+          </el-dialog>
+
+          <el-dialog v-model="pasteDialogVisible" title="设置 Paste" width="720px" :close-on-click-modal="false">
+            <el-alert v-if="!isLoggedIn" type="warning" :closable="false" show-icon title="需要登录后才能设置"></el-alert>
+            <el-alert
+              v-else
+              type="info"
+              :closable="false"
+              show-icon
+              title="提示"
+              description="签名档经审核后对所有人可见。请勿发布违法、违规或不当内容。"
+              style="margin-top:8px"
+            ></el-alert>
+
+            <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <el-button plain :loading="pasteLoading" :disabled="pasteLoading" @click="loadPasteExisting(true)">复原</el-button>
+              <el-button plain :disabled="pasteSaving" @click="pasteEditMarkdown = ''">清空</el-button>
+              <el-button type="primary" :loading="pasteSaving" :disabled="!isLoggedIn || pasteSaving" @click="savePaste">提交保存</el-button>
+              <span style="font-size:12px;color:#888" v-if="pasteExistingTimeText">当前已通过版本：{{ pasteExistingTimeText }}</span>
+            </div>
+
+            <div style="margin-top:12px">
+              <el-input
+                v-model="pasteEditMarkdown"
+                type="textarea"
+                :rows="10"
+                placeholder="支持简易 Markdown：# 标题、**粗体**、*斜体*、`代码`、```代码块```、- 列表、[链接](https://...)"
+              ></el-input>
+            </div>
+
+            <div style="margin-top:12px" v-if="pasteError">
+              <el-alert type="error" :closable="false" show-icon title="提交失败"></el-alert>
+              <div style="margin-top:8px;font-size:12px;color:#666;word-break:break-all">{{ pasteError }}</div>
+            </div>
+
+            <div style="margin-top:12px" v-if="pasteResult">
+              <el-alert type="success" :closable="false" show-icon title="提交成功"></el-alert>
+              <div style="margin-top:8px;font-size:12px;color:#666;word-break:break-all">{{ pasteResult }}</div>
+            </div>
+
+            <div style="margin-top:12px">
+              <div style="font-weight:600;margin-bottom:6px">预览</div>
+              <div
+                v-if="pastePreviewHtml"
+                v-html="pastePreviewHtml"
+                style="border:1px solid var(--el-border-color);border-radius:8px;padding:10px;background:var(--mc-surface);max-height:360px;overflow:auto"
+              ></div>
+              <div v-else style="font-size:12px;color:#888">暂无内容</div>
             </div>
           </el-dialog>
         </el-main>
