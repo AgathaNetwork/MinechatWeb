@@ -178,6 +178,38 @@ const app = createApp({
       }
     }
 
+    async function downloadFile(row) {
+      if (!row || !row.id) return;
+      lastError.value = '';
+      try {
+        if (!apiBase.value) await fetchConfig();
+
+        const res = await safeFetch(`${apiBase.value}/disk/${encodeURIComponent(row.id)}/download`, { method: 'GET' });
+        if (!res.ok) {
+          if (res.status === 401) throw new Error('请先登录');
+          const txt = await res.text().catch(() => '');
+          throw new Error(txt || `请求失败：${res.status}`);
+        }
+
+        const blob = await res.blob();
+        const name = String(row.name || 'file');
+        const url = URL.createObjectURL(blob);
+        try {
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = name;
+          a.style.display = 'none';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        } finally {
+          try { URL.revokeObjectURL(url); } catch (e) {}
+        }
+      } catch (e) {
+        lastError.value = e?.message || String(e);
+      }
+    }
+
     async function renameFile(row) {
       if (!row || !row.id) return;
       lastError.value = '';
@@ -260,8 +292,21 @@ const app = createApp({
       if (!row || !row.id) return;
       lastError.value = '';
 
-      const ok = confirm(`确定删除 “${row.name || ''}” 吗？`);
-      if (!ok) return;
+      try {
+        await ElementPlus.ElMessageBox.confirm(
+          `确定删除 “${row.name || ''}” 吗？`,
+          '删除确认',
+          {
+            type: 'warning',
+            confirmButtonText: '删除',
+            cancelButtonText: '取消',
+            dangerouslyUseHTMLString: false,
+          }
+        );
+      } catch (e) {
+        // user canceled
+        return;
+      }
 
       try {
         loading.value = true;
@@ -309,6 +354,7 @@ const app = createApp({
       onNav,
       refresh,
       upload,
+      downloadFile,
       renameFile,
       replaceFile,
       onReplacePicked,
