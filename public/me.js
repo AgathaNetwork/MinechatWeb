@@ -1202,6 +1202,10 @@ const app = createApp({
     function gotoTotp() {
       window.location.href = '/totp.html';
     }
+
+    function gotoDisk() {
+      window.location.href = '/disk.html';
+    }
     
       function gotoInfo() {
         window.location.href = '/info.html';
@@ -1290,6 +1294,7 @@ const app = createApp({
       gotoMaterials,
       gotoBigMap,
       gotoTotp,
+      gotoDisk,
       gotoInfo,
       logout,
       reloadSelf,
