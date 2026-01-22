@@ -965,6 +965,73 @@ const app = createApp({
     const messagesEl = ref(null);
     const chatLoading = ref(false);
 
+    // --- Global chat watermark (username + seconds) ---
+    let globalWatermarkCtl = null;
+    let globalWatermarkThemeKey = '';
+
+    function currentThemeKey() {
+      try {
+        const root = document.documentElement;
+        const t = root && root.dataset ? String(root.dataset.theme || '') : '';
+        if (t) return t;
+      } catch (e) {}
+      try {
+        const root = document.documentElement;
+        if (root && root.classList && root.classList.contains('dark')) return 'dark';
+      } catch (e) {}
+      return 'light';
+    }
+
+    function watermarkColorForTheme(themeKey) {
+      // Light mode: make it lighter (more subtle)
+      if (String(themeKey || '').toLowerCase() === 'dark') return 'rgba(0, 0, 0, 0.14)';
+      return 'rgba(0, 0, 0, 0.08)';
+    }
+
+    function watermarkUserLabel() {
+      try {
+        const u = String(localStorage.getItem('username') || '').trim();
+        if (u) return u;
+      } catch (e) {}
+      try {
+        const id = selfUserId.value !== null && selfUserId.value !== undefined ? String(selfUserId.value) : '';
+        if (id) return id;
+      } catch (e) {}
+      return 'Minechat';
+    }
+
+    function syncGlobalWatermarkEnabled() {
+      try {
+        const el = messagesEl.value;
+        const wm = window.MinechatWatermark;
+        if (!el || !wm || typeof wm.create !== 'function') return;
+
+        const themeKey = currentThemeKey();
+        if (globalWatermarkCtl && themeKey !== globalWatermarkThemeKey) {
+          try { globalWatermarkCtl.destroy(); } catch (e0) {}
+          globalWatermarkCtl = null;
+        }
+
+        if (!globalWatermarkCtl) {
+          globalWatermarkThemeKey = themeKey;
+          globalWatermarkCtl = wm.create({
+            targetEl: el,
+            enabled: false,
+            getText: () => `${watermarkUserLabel()} ${wm.formatNowSeconds()}`,
+            tileOptions: {
+              color: watermarkColorForTheme(themeKey),
+              font: '16px sans-serif',
+              rotateDeg: -22,
+              gapX: 260,
+              gapY: 200,
+            },
+          });
+        }
+
+        globalWatermarkCtl.setEnabled(isGlobalChat.value);
+      } catch (e) {}
+    }
+
     const isGlobalChat = computed(() => currentChatId.value === 'global');
     const isLoggedIn = computed(() => !!token.value || !!sessionOk.value);
 
@@ -5622,6 +5689,11 @@ const app = createApp({
       }
 
       try {
+        await nextTick();
+        syncGlobalWatermarkEnabled();
+      } catch (e) {}
+
+      try {
         document.addEventListener('paste', handlePasteToSend, true);
       } catch (e) {}
 
@@ -5651,6 +5723,16 @@ const app = createApp({
       } catch (e) {}
 
       try { stopReadReporter(); } catch (e) {}
+
+      try {
+        if (globalWatermarkCtl && typeof globalWatermarkCtl.destroy === 'function') {
+          globalWatermarkCtl.destroy();
+        }
+      } catch (e) {}
+    });
+
+    watch(isGlobalChat, () => {
+      try { syncGlobalWatermarkEnabled(); } catch (e) {}
     });
 
     return {
