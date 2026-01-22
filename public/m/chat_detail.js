@@ -176,6 +176,7 @@ const app = createApp({
     // --- Global chat watermark (username + seconds) ---
     let globalWatermarkCtl = null;
     let globalWatermarkThemeKey = '';
+    let globalWatermarkCfgKey = '';
 
     function currentThemeKey() {
       try {
@@ -191,8 +192,43 @@ const app = createApp({
     }
 
     function watermarkColorForTheme(themeKey) {
-      if (String(themeKey || '').toLowerCase() === 'dark') return 'rgba(0, 0, 0, 0.14)';
+      if (String(themeKey || '').toLowerCase() === 'dark') return 'rgba(255, 255, 255, 0.12)';
       return 'rgba(0, 0, 0, 0.08)';
+    }
+
+    function clampInt(n, min, max) {
+      const v = Math.round(Number(n));
+      if (!Number.isFinite(v)) return min;
+      return Math.max(min, Math.min(max, v));
+    }
+
+    function computeMobileWatermarkTileOptions(themeKey) {
+      try {
+        const vw = Math.max(1, Number(window.innerWidth || document.documentElement.clientWidth || 360));
+        const vh = Math.max(1, Number(window.innerHeight || document.documentElement.clientHeight || 640));
+
+        // Fixed small font for mobile watermark.
+        const fontPx = 8;
+        // Sync gap with smaller font to keep density reasonable.
+        const gapX = clampInt(vw * 0.70, 180, 320) / 2;
+        const gapY = clampInt(vh * 0.28, 110, 220) / 2;
+
+        return {
+          color: watermarkColorForTheme(themeKey),
+          font: `${fontPx}px sans-serif`,
+          rotateDeg: -22,
+          gapX,
+          gapY,
+        };
+      } catch (e) {
+        return {
+          color: watermarkColorForTheme(themeKey),
+          font: '8px sans-serif',
+          rotateDeg: -22,
+          gapX: 140,
+          gapY: 80,
+        };
+      }
     }
 
     function watermarkUserLabel() {
@@ -214,24 +250,22 @@ const app = createApp({
         if (!el || !wm || typeof wm.create !== 'function') return;
 
         const themeKey = currentThemeKey();
-        if (globalWatermarkCtl && themeKey !== globalWatermarkThemeKey) {
+        const tileOptions = computeMobileWatermarkTileOptions(themeKey);
+        const cfgKey = `${themeKey}:${tileOptions.font}:${tileOptions.gapX}:${tileOptions.gapY}`;
+
+        if (globalWatermarkCtl && (themeKey !== globalWatermarkThemeKey || cfgKey !== globalWatermarkCfgKey)) {
           try { globalWatermarkCtl.destroy(); } catch (e0) {}
           globalWatermarkCtl = null;
         }
 
         if (!globalWatermarkCtl) {
           globalWatermarkThemeKey = themeKey;
+          globalWatermarkCfgKey = cfgKey;
           globalWatermarkCtl = wm.create({
             targetEl: el,
             enabled: false,
             getText: () => `${watermarkUserLabel()} ${wm.formatNowSeconds()}`,
-            tileOptions: {
-              color: watermarkColorForTheme(themeKey),
-              font: '15px sans-serif',
-              rotateDeg: -22,
-              gapX: 240,
-              gapY: 180,
-            },
+            tileOptions,
           });
         }
 
@@ -5086,6 +5120,16 @@ const app = createApp({
         syncGlobalWatermarkEnabled();
       } catch (e) {}
 
+      // Recompute watermark on orientation/size changes.
+      try {
+        window.addEventListener('resize', syncGlobalWatermarkEnabled);
+      } catch (e) {}
+      try {
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener('resize', syncGlobalWatermarkEnabled);
+        }
+      } catch (e) {}
+
       try { startReadReporter(); } catch (e) {}
 
       // 点击页面其他地方关闭上下文菜单
@@ -5096,6 +5140,13 @@ const app = createApp({
 
     onBeforeUnmount(() => {
       try { stopReadReporter(); } catch (e) {}
+
+      try { window.removeEventListener('resize', syncGlobalWatermarkEnabled); } catch (e) {}
+      try {
+        if (window.visualViewport) {
+          window.visualViewport.removeEventListener('resize', syncGlobalWatermarkEnabled);
+        }
+      } catch (e) {}
 
       try {
         if (globalWatermarkCtl && typeof globalWatermarkCtl.destroy === 'function') {

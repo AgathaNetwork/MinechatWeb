@@ -984,7 +984,7 @@ const app = createApp({
 
     function watermarkColorForTheme(themeKey) {
       // Light mode: make it lighter (more subtle)
-      if (String(themeKey || '').toLowerCase() === 'dark') return 'rgba(0, 0, 0, 0.14)';
+      if (String(themeKey || '').toLowerCase() === 'dark') return 'rgba(255, 255, 255, 0.12)';
       return 'rgba(0, 0, 0, 0.08)';
     }
 
