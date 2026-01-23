@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="/theme.js"></script>
+    <title>Minechat 实名注册</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/vendor/element-plus/index.css" />
+    <link rel="stylesheet" href="/vendor/element-plus/theme-chalk/dark/css-vars.css" />
+    <style>
+      [v-cloak]{display:none}
+    </style>
+  </head>
+  <body>
+    <div id="app" v-cloak>
+      <el-container style="height:100vh">
+        <el-main style="display:flex;align-items:center;justify-content:center;padding:12px">
+          <el-card style="max-width:640px;width:100%">
+            <template #header>
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <span style="font-weight:600">实名注册</span>
+                <el-button link type="primary" @click="gotoLogin">返回登录</el-button>
+              </div>
+            </template>
+
+            <div>
+              <el-steps :active="step" finish-status="success" simple style="margin-bottom:12px">
+                <el-step title="微软登录"></el-step>
+                <el-step title="填写信息"></el-step>
+                <el-step title="扫脸认证"></el-step>
+                <el-step title="完成"></el-step>
+              </el-steps>
+
+              <div v-if="errorMsg" style="margin-bottom:12px">
+                <el-alert type="error" :closable="false" show-icon :title="errorMsg"></el-alert>
+                <div v-if="errorDetail" style="margin-top:8px;font-size:12px;color:#666;word-break:break-all">{{ errorDetail }}</div>
+              </div>
+
+              <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+                <el-tag type="info" v-if="msUsername">已获取用户名：{{ msUsername }}</el-tag>
+                <el-tag v-if="minecraftId" effect="plain">ID：{{ minecraftId }}</el-tag>
+              </div>
+
+              <div style="margin-bottom:16px">
+                <el-button type="primary" :loading="msLogging" :disabled="msLogging || loading" @click="startMsRegister">1) 使用 Microsoft 获取游戏名</el-button>
+                <div style="margin-top:8px;font-size:12px;color:#888">说明：此步骤仅用于获取 Minecraft 用户名，不会登录。</div>
+              </div>
+
+              <el-divider></el-divider>
+
+              <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+                <el-input v-model="idName" placeholder="2) 姓名" style="width:220px" clearable></el-input>
+                <el-input v-model="idNumber" placeholder="2) 身份证号" style="width:260px" clearable maxlength="18"></el-input>
+                <el-button type="success" :loading="starting" :disabled="starting || loading" @click="startFace">3) 开始扫脸</el-button>
+              </div>
+
+              <div v-if="zimUrl && !isMobile" style="margin-top:14px">
+                <el-alert type="info" :closable="false" show-icon title="请用手机扫描二维码完成扫脸"></el-alert>
+                <div style="margin-top:10px;display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+                  <img v-if="qrImageUrl" :src="qrImageUrl" width="220" height="220" style="border:1px solid var(--el-border-color-lighter);border-radius:10px;background:#fff" />
+                  <div style="min-width:220px;flex:1">
+                    <div style="display:flex;gap:10px;flex-wrap:wrap">
+                      <el-button @click="copyZimUrl">复制链接</el-button>
+                      <el-button @click="openZimUrl">在本机打开</el-button>
+                    </div>
+                    <div style="margin-top:8px;font-size:12px;color:#888;word-break:break-all">
+                      {{ zimUrl }}
+                    </div>
+                    <div style="margin-top:8px;font-size:12px;color:#888">手机扫脸完成后，本页会自动刷新状态。</div>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="flowInfo" style="margin-top:12px">
+                <el-alert :type="flowInfo.type" :closable="false" show-icon :title="flowInfo.title"></el-alert>
+                <div v-if="flowInfo.detail" style="margin-top:8px;font-size:12px;color:#666;word-break:break-all">{{ flowInfo.detail }}</div>
+              </div>
+
+              <div v-if="canLogin" style="margin-top:14px;display:flex;justify-content:flex-end;gap:10px">
+                <el-button type="primary" @click="gotoLogin">去登录</el-button>
+              </div>
+            </div>
+          </el-card>
+        </el-main>
+      </el-container>
+    </div>
+
+    <script src="/vendor/vue/vue.global.prod.js"></script>
+    <script src="/vendor/element-plus/index.full.js"></script>
+    <script src="/register.js"></script>
+  </body>
+</html>

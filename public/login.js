@@ -104,6 +104,51 @@ createApp({
       }
     }
 
+    function processRegisterSuccessHint(href) {
+      try {
+        const url = new URL(href || window.location.href);
+        const sp = url.searchParams;
+
+        let hinted = false;
+        // Query flag (optional)
+        if (sp.get('registered') === '1') {
+          hinted = true;
+          try {
+            ElementPlus.ElMessage.success('注册成功，请继续登录');
+          } catch (e) {}
+        }
+
+        // sessionStorage flag (preferred, single-use)
+        try {
+          const key = 'minechat_register_success_once';
+          const raw = sessionStorage.getItem(key);
+          if (raw) {
+            sessionStorage.removeItem(key);
+            let u = '';
+            try {
+              const obj = JSON.parse(raw);
+              u = obj && obj.username ? String(obj.username) : '';
+            } catch (e) {
+              // ignore
+            }
+            try {
+              ElementPlus.ElMessage.success(u ? `实名完成：${u}，请继续登录` : '实名完成，请继续登录');
+            } catch (e) {}
+            hinted = true;
+          }
+        } catch (e) {}
+
+        // Clean URL if we used query param
+        if (hinted && sp.has('registered')) {
+          try {
+            sp.delete('registered');
+            const clean = url.origin + url.pathname + (sp.toString() ? `?${sp.toString()}` : '') + url.hash;
+            window.history.replaceState({}, document.title, clean);
+          } catch (e) {}
+        }
+      } catch (e) {}
+    }
+
     async function fetchConfig() {
       const conf = await fetch('/config').then((r) => r.json());
       apiAuthBase.value = conf.apiBase;
@@ -129,6 +174,10 @@ createApp({
       } else {
         window.location.href = '/chat.html';
       }
+    }
+
+    function gotoRegister() {
+      window.location.href = '/register.html';
     }
 
     async function loginWithTotp() {
@@ -272,6 +321,9 @@ createApp({
       checking.value = true;
       await fetchConfig();
 
+      // Show one-time hint after registration
+      processRegisterSuccessHint(window.location.href);
+
       // If backend redirected to this page with auth params, apply them.
       processAuthRedirectUrl(window.location.href);
 
@@ -285,6 +337,7 @@ createApp({
       loggingIn,
       hasSession,
       openLoginPopup,
+      gotoRegister,
       totpUsername,
       totpCode,
       totpLoggingIn,
