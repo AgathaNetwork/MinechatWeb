@@ -258,10 +258,11 @@ createApp({
     }
 
     const step = computed(() => {
-      if (flowStatus.value === 'passed') return 4;
-      if (bizId.value && token.value) return 3;
-      if (msUsername.value) return 2;
-      return 1;
+      // Element Plus Steps uses 0-based index.
+      if (flowStatus.value === 'passed') return 3;
+      if (bizId.value && token.value) return 2;
+      if (msUsername.value) return 1;
+      return 0;
     });
 
     const canLogin = computed(() => flowStatus.value === 'passed');
