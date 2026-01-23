@@ -325,9 +325,16 @@ createApp({
       processRegisterSuccessHint(window.location.href);
 
       // If backend redirected to this page with auth params, apply them.
-      processAuthRedirectUrl(window.location.href);
+      const handledAuthRedirect = processAuthRedirectUrl(window.location.href);
 
       hasSession.value = await checkSession();
+
+      // If we already have a valid session cookie, skip the login screen.
+      // Do NOT auto-navigate when we are showing an explicit auth result.
+      if (!handledAuthRedirect && authOk.value === null && hasSession.value) {
+        try { gotoChat(); } catch (e) {}
+        return;
+      }
       checking.value = false;
     });
 
