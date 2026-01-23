@@ -43,7 +43,7 @@
                 <el-alert type="error" :closable="false" show-icon :title="authError || '登录失败'"></el-alert>
                 <div v-if="authDetail" style="margin-top:8px;font-size:12px;color:#666;word-break:break-all">{{ authDetail }}</div>
                 <div v-if="authError === 'IDVERIFY_REQUIRED'" style="margin-top:10px;display:flex;justify-content:flex-end">
-                  <el-button type="primary" @click="gotoRegister">去实名注册</el-button>
+                  <el-button type="primary" @click="gotoRegister">去注册</el-button>
                 </div>
               </div>
 
@@ -56,7 +56,7 @@
 
               <p style="margin-top:0">使用 Microsoft 帐号登录。</p>
               <el-button type="primary" :loading="loggingIn" :disabled="loggingIn || checking" @click="openLoginPopup">使用 Microsoft 登录</el-button>
-              <el-button style="margin-left:8px" @click="gotoRegister">实名注册</el-button>
+              <el-button style="margin-left:8px" @click="gotoRegister">注册</el-button>
 
               <el-divider></el-divider>
 

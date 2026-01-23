@@ -41,8 +41,25 @@ createApp({
 
     const isMobile = computed(() => isMobileDevice());
 
+    const hasMsProfile = computed(() => !!String(msUsername.value || '').trim());
+    const hasZimUrl = computed(() => !!String(zimUrl.value || '').trim());
+    const showIdForm = computed(() => hasMsProfile.value && !hasZimUrl.value);
+
     function gotoLogin() {
       window.location.href = isMobileDevice() ? '/m/login.html' : '/index.html';
+    }
+
+    function resetFlow() {
+      try { stopPolling(); } catch (e) {}
+      idName.value = '';
+      idNumber.value = '';
+      zimUrl.value = '';
+      qrImageUrl.value = '';
+      bizId.value = '';
+      token.value = '';
+      flowStatus.value = '';
+      flowUpdatedAt.value = null;
+      clearErrors();
     }
 
     async function fetchConfig() {
@@ -67,6 +84,8 @@ createApp({
           if (ok) {
             msUsername.value = sp.get('username') || '';
             minecraftId.value = sp.get('minecraftId') || '';
+            // New MS profile means we should reset any previous flow state.
+            resetFlow();
             clearErrors();
           } else {
             errorMsg.value = sp.get('error') || '获取用户名失败';
@@ -260,9 +279,9 @@ createApp({
         return { type: 'error', title: '发起认证失败', detail: '请返回并重试。' };
       }
       if (st === 'notified') {
-        return { type: 'warning', title: '已收到回调，但未解析到通过/失败', detail: '请检查后端 /idverify/zim/notify 是否收到了正确的结果字段；可用 /idverify/flow/debug?bizId=...&token=... 查看回调内容预览。' };
+        return { type: 'warning', title: '已收到回调，但未解析到通过/失败', detail: '请检查后端是否收到了正确的结果字段。' };
       }
-      return { type: 'info', title: '认证处理中…（完成扫脸后会自动刷新）', detail: flowUpdatedAt.value ? `更新时间：${flowUpdatedAt.value}` : '' };
+      return { type: 'info', title: '完成认证后会自动跳转。', detail: flowUpdatedAt.value ? `更新时间：${flowUpdatedAt.value}` : '' };
     });
 
     onMounted(async () => {
@@ -288,6 +307,9 @@ createApp({
       zimUrl,
       qrImageUrl,
       isMobile,
+      hasMsProfile,
+      hasZimUrl,
+      showIdForm,
       bizId,
       token,
       flowStatus,
@@ -300,6 +322,7 @@ createApp({
       startFace,
       copyZimUrl,
       openZimUrl,
+      resetFlow,
       gotoLogin,
     };
   },
